@@ -22,7 +22,7 @@
   /* Depth layers. Drawn at half resolution and blurred by the GPU; oversized so blurred edges stay off-screen. */
   .layer { position: fixed; inset: -80px; width: calc(100% + 160px); height: calc(100% + 160px); display: block; }
   #far  { filter: blur(26px) saturate(1.15); }
-  #mid  { filter: blur(7px) saturate(1.1); }
+  #mid  { filter: blur(11px) saturate(1.1); }
   #near { filter: blur(18px) saturate(1.2); }
   #clock { position: fixed; inset: 0; width: 100%; height: 100%; }
   #grain { position: fixed; inset: 0; width: 100%; height: 100%; mix-blend-mode: overlay; opacity: 0.2; pointer-events: none; }
@@ -57,7 +57,7 @@
     background: none; color: var(--text); text-align: left; font: 600 13px var(--font); letter-spacing: 0.08em;
   }
   .scene-btn[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
-  .scene-btn canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; filter: blur(3px) saturate(1.15); transform: scale(1.06); }
+  .scene-btn canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; filter: blur(4px) saturate(1.15); transform: scale(1.08); }
   .scene-btn span { display: block; padding: 8px 11px; background: rgba(255,255,255,0.05); position: relative; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
   input[type=range] { width: 100%; accent-color: var(--ember); }
@@ -267,11 +267,10 @@ function makeScene(farC, midC, nearC, opts = {}) {
   const clear = ctx => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore(); };
   const blob = (ctx, x, y, r, c) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, c); g.addColorStop(1, c.replace(/[\d.]+\)$/, "0)")); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
 
-  // ---------- The person ----------
-  // A woman standing in profile, built from real proportions (about 7.5 heads tall):
-  // forehead, nose, lips, chin, neck, chest, waist, hips, knees, calves. Height 1, feet at 0, facing +x.
-  // She is painted with light (shadow on the back, light on the side she faces) into her own canvas,
-  // then placed into the scene with long-exposure ghosts, colour fringes and an optional reflection.
+  // ---------- The body ----------
+  // A human body built on a jointed skeleton with anatomical limb shapes (thighs, calves, arms, torso, head),
+  // moving through one slow running leap. It is large and cropped by the frame, painted as a soft dark mass
+  // with volume, and lit from the side it moves towards. Units: standing height 1, origin at the hip, y down.
   const figC = document.createElement("canvas"), fctx = figC.getContext("2d");
   const tintC = document.createElement("canvas"), tctx = tintC.getContext("2d");
   function smoothShape(ctx, pts) {
@@ -280,98 +279,126 @@ function makeScene(farC, midC, nearC, opts = {}) {
     for (let i = 0; i < n; i++) { const p = pts[i], q = mid(p, pts[(i + 1) % n]); ctx.quadraticCurveTo(p[0], p[1], q[0], q[1]); }
     ctx.closePath();
   }
-  const BODY = [
-    [0.0, -1.0], [0.03, -0.99], [0.04, -0.965], [0.042, -0.943], [0.059, -0.92], [0.046, -0.909], [0.049, -0.898],
-    [0.045, -0.889], [0.042, -0.877], [0.022, -0.866], [0.018, -0.84], [0.03, -0.812], [0.062, -0.765], [0.068, -0.735],
-    [0.052, -0.703], [0.036, -0.63], [0.046, -0.565], [0.052, -0.5], [0.054, -0.41], [0.041, -0.29], [0.04, -0.265],
-    [0.034, -0.16], [0.028, -0.05], [0.04, -0.02], [0.085, -0.008], [0.084, 0.0], [-0.022, 0.0], [-0.026, -0.025],
-    [-0.016, -0.06], [-0.04, -0.16], [-0.042, -0.21], [-0.03, -0.27], [-0.046, -0.37], [-0.07, -0.455], [-0.066, -0.52],
-    [-0.044, -0.6], [-0.054, -0.7], [-0.062, -0.78], [-0.04, -0.825], [-0.026, -0.845], [-0.036, -0.875], [-0.06, -0.915],
-    [-0.062, -0.95], [-0.045, -0.985],
-  ];
-  const ARM = [
-    [-0.035, -0.815], [0.015, -0.81], [0.012, -0.72], [0.006, -0.64], [0.022, -0.56], [0.03, -0.5], [0.036, -0.46],
-    [0.03, -0.435], [0.016, -0.44], [0.012, -0.5], [-0.004, -0.56], [-0.018, -0.64], [-0.03, -0.72],
-  ];
-  const DRESS = {
-    summer: [0xF1ECE3, -0.24], spring: [0xEFC6CD, -0.27], autumn: [0xB55A3A, -0.2], winter: [0x363B4C, -0.07],
-  };
-  function paintFigure(h, face, t, w, P, sky, res) {
-    const s = sky.season, cw = Math.ceil(h * 0.62 * res), ch = Math.ceil(h * 1.06 * res);
+  const v2 = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k];
+  const down = a => [Math.sin(a), Math.cos(a)];          // direction at angle a from straight down, + = forward
+
+  function pose(tt) {
+    const ph = tt * 0.32;                                   // one full stride ≈ 20 s, slow motion
+    const lean = 0.17 + 0.04 * Math.sin(2 * ph);
+    const hip = [0, -0.018 * Math.cos(2 * ph)];
+    const up = [Math.sin(lean), -Math.cos(lean)], fwd = [Math.cos(lean), Math.sin(lean)];
+    const shoulder = v2(v2(hip, up, 0.3), fwd, -0.005);
+    const neck = v2(hip, up, 0.345);
+    const head = v2(v2(neck, up, 0.085), fwd, 0.012);
+    const leg = p => {
+      const thigh = 0.78 * Math.sin(p) + 0.06;
+      const bend = 0.12 + 1.15 * Math.max(0, Math.cos(p + 0.3)) ** 1.5;
+      const knee = v2(hip, down(thigh), 0.245), shin = thigh - bend;
+      const ankle = v2(knee, down(shin), 0.25);
+      return { knee, ankle, toe: v2(ankle, down(shin + 1.45), 0.075), thigh, shin };
+    };
+    const arm = p => {
+      const upper = -1.25 * Math.sin(p) + 0.12;
+      const elbow = v2(shoulder, down(upper), 0.17);
+      const fore = upper + 0.25 + 0.45 * Math.max(0, -Math.sin(p));
+      const wrist = v2(elbow, down(fore), 0.15);
+      return { elbow, wrist, tip: v2(wrist, down(fore + 0.12), 0.085) };
+    };
+    return { hip, up, fwd, lean, shoulder, neck, head, legN: leg(ph), legF: leg(ph + Math.PI), armN: arm(ph), armF: arm(ph + Math.PI) };
+  }
+
+  // a limb segment as a soft tapered shape, with an optional muscle swelling at `at` (0..1 along the bone)
+  function limb(ctx, A, B, wa, wb, bulge = 0, at = 0.3) {
+    const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1e-6, ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+    const S = [0, 0.2, 0.4, 0.6, 0.8, 1], w = k => wa + (wb - wa) * k + bulge * Math.exp(-(((k - at) / 0.28) ** 2));
+    const left = S.map(k => [A[0] + dx * k + nx * w(k), A[1] + dy * k + ny * w(k)]);
+    const right = S.map(k => [A[0] + dx * k - nx * w(k), A[1] + dy * k - ny * w(k)]).reverse();
+    smoothShape(ctx, [[A[0] - ux * wa * 0.7, A[1] - uy * wa * 0.7], ...left, [B[0] + ux * wb * 0.8, B[1] + uy * wb * 0.8], ...right]);
+  }
+  function bodyShape(ctx, q, part) {
+    const { hip, up, fwd } = q, at = (u, v) => v2(v2(hip, up, u), fwd, v);
+    ctx.beginPath();
+    if (part === "far") {
+      const L = q.legF, A = q.armF;
+      limb(ctx, hip, L.knee, 0.058, 0.034, 0.008, 0.3); limb(ctx, L.knee, L.ankle, 0.032, 0.016, 0.014, 0.28); limb(ctx, L.ankle, L.toe, 0.02, 0.011);
+      limb(ctx, q.shoulder, A.elbow, 0.028, 0.021, 0.004); limb(ctx, A.elbow, A.wrist, 0.021, 0.013, 0.005, 0.25); limb(ctx, A.wrist, A.tip, 0.015, 0.008);
+    } else if (part === "torso") {
+      smoothShape(ctx, [
+        at(-0.03, -0.05), at(0.0, -0.075), at(0.06, -0.068), at(0.13, -0.046), at(0.2, -0.05), at(0.27, -0.066),
+        at(0.32, -0.05), at(0.35, -0.022), at(0.35, 0.026), at(0.31, 0.046), at(0.26, 0.07), at(0.21, 0.062),
+        at(0.16, 0.047), at(0.1, 0.054), at(0.04, 0.06), at(-0.02, 0.042), at(-0.05, 0.0),
+      ]);
+      limb(ctx, q.neck, v2(q.head, up, -0.04), 0.027, 0.024);
+      ctx.moveTo(q.head[0] + 0.06, q.head[1]);
+      ctx.ellipse(q.head[0], q.head[1], 0.05, 0.064, q.lean * 0.6, 0, 6.2832);
+    } else {
+      const L = q.legN, A = q.armN;
+      limb(ctx, hip, L.knee, 0.062, 0.036, 0.009, 0.3); limb(ctx, L.knee, L.ankle, 0.034, 0.017, 0.016, 0.28); limb(ctx, L.ankle, L.toe, 0.021, 0.012);
+      limb(ctx, q.shoulder, A.elbow, 0.03, 0.022, 0.004); limb(ctx, A.elbow, A.wrist, 0.022, 0.014, 0.005, 0.25); limb(ctx, A.wrist, A.tip, 0.016, 0.008);
+    }
+  }
+  function paintFigure(h, face, tt, P, sky, res) {
+    const cw = Math.ceil(h * 1.6 * res), ch = Math.ceil(h * 1.4 * res);
     if (figC.width !== cw || figC.height !== ch) { figC.width = tintC.width = cw; figC.height = tintC.height = ch; }
     const c = fctx; c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cw, ch);
-    const ax = cw / 2, ay = ch - h * 0.02 * res;
+    const ax = cw / 2, ay = ch * 0.5;
     c.setTransform(res * h * face, 0, 0, res * h, ax, ay);
-    const night = P.night;
-    const light = mixc(P.sun, [0.85, 0.9, 1], night);                 // sunlight, or cool moonlight
-    const shade = (base, k) => {                                       // [shadow side, lit side]
-      const dim = mixc(base, mul(mixc(base, [0.12, 0.14, 0.28], 0.6), 0.5), night * 0.75);
-      return [mixc(mul(dim, 0.42), P.mid, 0.18), mixc(dim, light, 0.28 * k + 0.12)];
-    };
-    const paint = (pts, base, k = 1) => {
-      const [sh, lt] = shade(base, k);
-      const g = c.createLinearGradient(-0.08, -0.6, 0.075, -0.65);
-      g.addColorStop(0, css(sh)); g.addColorStop(0.55, css(mixc(sh, lt, 0.6))); g.addColorStop(1, css(lt));
-      c.beginPath(); smoothShape(c, pts); c.fillStyle = g; c.fill();
-    };
-    const breath = Math.sin(t * 0.9) * 0.002, sway = Math.sin(t * 0.33) * 0.004;
-    const f = k => Math.sin(t * (1.5 + k * 0.27) + k * 1.9) * 0.008 * (0.35 + w);
-    const skin = hex(0xC48C70), hairC = hex(0x2B1F1B);
-    // body (skin)
-    paint(BODY.map(([x, y]) => [x + (y < -0.75 && x > 0.05 ? breath : 0) + sway * (1 + y), y]), skin);
-    // dress / coat for the season
-    const dw = add(mul(hex(DRESS.winter[0]), s.winter), mul(hex(DRESS.spring[0]), s.spring), mul(hex(DRESS.summer[0]), s.summer), mul(hex(DRESS.autumn[0]), s.autumn));
-    const hem = DRESS.winter[1] * s.winter + DRESS.spring[1] * s.spring + DRESS.summer[1] * s.summer + DRESS.autumn[1] * s.autumn;
-    const bx = y => sway * (1 + y);
-    const dress = [
-      [0.032, -0.812], [0.068, -0.765], [0.073, -0.735], [0.058, -0.7], [0.046, -0.63], [0.056, -0.56], [0.064, -0.48],
-      [0.072, -0.38], [0.082, hem + 0.06], [0.088, hem + f(1)], [0.03, hem + 0.008 + f(2)], [-0.03, hem + 0.012 + f(3)],
-      [-0.08 - w * 0.05, hem + 0.012 + f(4)], [-0.105 - w * 0.09, hem + 0.008 + f(5)], [-0.085 - w * 0.05, -0.38 + f(6) * 0.5],
-      [-0.076, -0.47], [-0.07, -0.53], [-0.05, -0.6], [-0.058, -0.7], [-0.066, -0.78], [-0.042, -0.818],
-    ].map(([x, y]) => [x + bx(y), y]);
-    paint(dress, dw, 0.8);
-    // arm, swinging a little from the shoulder
-    const a = Math.sin(t * 0.5) * 0.035 - w * 0.06, ca = Math.cos(a), sa = Math.sin(a), sx = -0.01, sy = -0.81;
-    paint(ARM.map(([x, y]) => [sx + (x - sx) * ca - (y - sy) * sa + bx(sy), sy + (x - sx) * sa + (y - sy) * ca]), s.winter > 0.5 ? dw : skin, 1.1);
-    // long hair, lifted by the wind
-    const hw = w * 0.9;
-    paint([
-      [0.034, -0.978], [0.0, -1.005], [-0.04, -1.002], [-0.07, -0.975], [-0.08 - hw * 0.02, -0.93 + f(7)],
-      [-0.084 - hw * 0.05, -0.86 + f(8)], [-0.09 - hw * 0.09, -0.79 + f(9)], [-0.075 - hw * 0.11, -0.74 + f(10)],
-      [-0.055 - hw * 0.04, -0.765], [-0.046, -0.82], [-0.034, -0.87], [-0.022, -0.925], [0.012, -0.965],
-    ].map(([x, y]) => [x + bx(y), y]), hairC, 0.6);
-    // light wrapping around the edge she turns towards
+    const q = pose(tt), night = P.night;
+    const light = mixc(P.sun, [0.85, 0.9, 1], night);
+    let base = mixc(mul(P.hor, 0.36), hex(0x5A2C22), 0.5);
+    base = mixc(base, hex(0x141826), night * 0.7);
+    // far limbs a little deeper in shadow, then torso and head, then near limbs
+    bodyShape(c, q, "far"); c.fillStyle = css(mul(base, 0.78)); c.fill();
+    bodyShape(c, q, "torso"); c.fillStyle = css(base); c.fill();
+    bodyShape(c, q, "near"); c.fillStyle = css(mixc(base, light, 0.06)); c.fill();
+    // volume: light falls on the front of the body, the back turns away into shadow
     c.globalCompositeOperation = "source-atop";
-    const rim = c.createLinearGradient(0.0, 0, 0.09, 0);
-    rim.addColorStop(0, css(light, 0)); rim.addColorStop(1, css(light, 0.25 + sky.golden * 0.45 + night * 0.15));
-    c.fillStyle = rim; c.fillRect(-0.3, -1.1, 0.6, 1.2);
+    const vol = c.createLinearGradient(-0.12, 0, 0.12, -0.05);
+    vol.addColorStop(0, css(mul(base, 0.5), 0.7)); vol.addColorStop(0.5, css(base, 0)); vol.addColorStop(1, css(mixc(base, light, 0.4), 0.6));
+    c.fillStyle = vol; c.fillRect(-1, -1, 2, 2);
+    const sh = v2(q.shoulder, q.fwd, 0.04);
+    const glow = c.createRadialGradient(sh[0], sh[1], 0, sh[0], sh[1], 0.22);
+    glow.addColorStop(0, css(light, 0.22 + sky.golden * 0.2)); glow.addColorStop(1, css(light, 0));
+    c.fillStyle = glow; c.fillRect(-1, -1, 2, 2);
     c.globalCompositeOperation = "source-over";
-    return { ax: ax / res, ay: ay / res, w: cw / res, h: ch / res };
+    return { ax: ax / res, ay: ay / res, w: cw / res, h: ch / res, shoulder: [sh[0] * face * h, sh[1] * h], light };
   }
   function tinted(color) {
     tctx.globalCompositeOperation = "source-over"; tctx.clearRect(0, 0, tintC.width, tintC.height); tctx.drawImage(figC, 0, 0);
     tctx.globalCompositeOperation = "source-in"; tctx.fillStyle = color; tctx.fillRect(0, 0, tintC.width, tintC.height);
     return tintC;
   }
+  // Long exposure: earlier poses and one faint pose from a moment ahead, around the present one.
   function drawFigure(ctx, x, y, h, face, t, wind, P, sky, reflect) {
-    const m = paintFigure(h, face, t, wind, P, sky, RES);
-    const put = (img, dx, dy, alpha, mode) => {
+    const put = (m, img, dx, alpha, mode) => {
       ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = mode || "source-over";
-      ctx.drawImage(img, x - m.ax + dx, y - m.ay + dy, m.w, m.h); ctx.restore();
+      ctx.drawImage(img, x - m.ax + dx, y - m.ay, m.w, m.h); ctx.restore();
     };
-    const disperse = 0.25 + wind * 0.9;
+    const spread = 0.6 + wind * 0.8;
     if (reflect != null) { ctx.save(); ctx.beginPath(); ctx.rect(-1e4, -1e4, 2e4, reflect + 1e4); ctx.clip(); }
-    // ghosts of the moment just gone
-    for (let k = 4; k >= 1; k--) put(figC, -face * k * h * 0.016 * disperse, -k * h * 0.002, 0.11 * (5 - k) / 4);
-    put(figC, 0, 0, 0.96);
-    // colour fringes: magenta trailing, yellow-green leading
-    put(tinted("rgb(255,60,170)"), -face * h * 0.024 * disperse, 0, 0.2, "screen");
-    put(tinted("rgb(215,255,90)"), face * h * 0.016 * disperse, 0, 0.14, "screen");
+    for (const [dt, a] of [[-2.4, 0.08], [-1.5, 0.13], [-0.7, 0.2], [0.9, 0.07]]) {
+      const m = paintFigure(h, face, t + dt * spread, P, sky, RES);
+      put(m, figC, face * dt * h * 0.012 * spread, a);
+    }
+    const m = paintFigure(h, face, t, P, sky, RES);
+    put(m, figC, 0, 0.9);
+    put(m, tinted("rgb(255,60,170)"), -face * h * 0.014 * spread, 0.16, "screen");
+    put(m, tinted("rgb(215,255,90)"), face * h * 0.01 * spread, 0.11, "screen");
+    // light bleeding over the edge of the shoulder
+    const [sx, sy] = [x + m.shoulder[0], y + m.shoulder[1]], r = h * 0.18, k = 0.55 + sky.golden * 0.35 - P.night * 0.25;
+    ctx.save(); ctx.globalCompositeOperation = "screen";
+    let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+    g.addColorStop(0, css(m.light, 0.35 * k)); g.addColorStop(1, css(m.light, 0));
+    ctx.fillStyle = g; ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+    const r2 = h * 0.045;
+    g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r2);
+    g.addColorStop(0, `rgba(255,252,245,${0.95 * k})`); g.addColorStop(0.6, `rgba(255,248,235,${0.6 * k})`); g.addColorStop(1, "rgba(255,245,230,0)");
+    ctx.fillStyle = g; ctx.fillRect(sx - r2, sy - r2, r2 * 2, r2 * 2); ctx.restore();
     if (reflect != null) {
       ctx.restore();
       ctx.save(); ctx.beginPath(); ctx.rect(-1e4, reflect, 2e4, 1e4); ctx.clip();
-      ctx.translate(0, reflect); ctx.scale(1, -0.6); ctx.translate(0, -reflect);
-      put(figC, Math.sin(t * 1.3) * h * 0.01, 0, 0.24);
+      ctx.translate(0, reflect); ctx.scale(1, -0.55); ctx.translate(0, -reflect);
+      put(m, figC, Math.sin(t * 1.3) * h * 0.008, 0.2);
       ctx.restore();
     }
   }
@@ -445,14 +472,8 @@ function makeScene(farC, midC, nearC, opts = {}) {
       }
       // mid: the person standing in the field, towards the light
       const lightX = sky.daylight > 0.3 || sky.moonAlt < 0 ? sky.sunX : sky.moonX;
-      const fx = W * 0.5, face = lightX * W > fx ? 1 : -1, fh = H * (W > H ? 0.68 : 0.54);
-      drawFigure(mid, fx, H * 0.99, fh, face, t, wind, P, sky, null);
-      // flowers around the legs
-      for (const f of R.field.slice(0, 70)) {
-        const x = fx + (f.x - 0.5) * fh * 0.9, y = H * 0.99 - f.y * fh * 0.2, r = fh * (0.022 + f.size * 0.026);
-        mid.beginPath(); mid.ellipse(x + Math.sin(t + f.phase) * 4 * wind, y, r * 1.3, r, 0, 0, 6.2832);
-        mid.fillStyle = css(mixc(flowerColor(s, f.tone + 1), [0.05, 0.05, 0.1], P.night * 0.7), 0.9); mid.fill();
-      }
+      const fx = W * 0.5, face = lightX * W > fx ? 1 : -1, fh = W > H ? H * 1.1 : Math.min(H * 0.78, W * 1.5);
+      drawFigure(mid, fx, H * 0.6, fh, face, t, wind, P, sky, null);
       // near: big out-of-focus flowers in front, swaying
       for (const b of R.bokeh) {
         const x = b.x * W + Math.sin(t * 0.6 + b.phase) * 30 * (0.4 + wind), y = H * (0.86 + b.y * 0.2), r = unit * (0.05 + b.size * 0.08);
@@ -481,8 +502,8 @@ function makeScene(farC, midC, nearC, opts = {}) {
       }
       // mid: the person standing in shallow water, with a reflection
       const lightX = sky.daylight > 0.3 || sky.moonAlt < 0 ? sky.sunX : sky.moonX;
-      const fx = W * 0.5, face = lightX * W > fx ? 1 : -1, fh = H * (W > H ? 0.64 : 0.5), fy = H * 0.95;
-      const waterY = fy - fh * 0.22;   // knee-deep
+      const fx = W * 0.5, face = lightX * W > fx ? 1 : -1, fh = W > H ? H * 1.1 : Math.min(H * 0.78, W * 1.5), fy = H * 0.58;
+      const waterY = H * 0.84;   // she runs through shallow water
       drawFigure(mid, fx, fy, fh, face, t, wind * 0.6, P, sky, waterY);
       // a thin bright line where the water meets her
       mid.fillStyle = css(mixc(light[1], [1, 1, 1], 0.3), 0.35); mid.fillRect(fx - fh * 0.16, waterY - 1, fh * 0.32, 3);
