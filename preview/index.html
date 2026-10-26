@@ -1,0 +1,373 @@
+<title>NOW Clock</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap">
+<style>
+  /* Layout: one living full-screen scene; a small glass control strip floats at the bottom. Single dark look by choice. */
+  :root {
+    --ink: #1f2430;
+    --paper: #fbf7ec;
+    --glass: rgba(20, 24, 40, 0.48);
+    --glass-line: rgba(255, 255, 255, 0.18);
+    --text: #f6f3ea;
+    --muted: rgba(246, 243, 234, 0.72);
+    --coral: #ee6b54;
+    --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    color-scheme: dark;
+    background: #0b1026;
+  }
+  html, body { height: 100%; }
+  body { background: #0b1026; color: var(--text); font-family: var(--font); overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .panel {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    display: flex; justify-content: center; pointer-events: none;
+  }
+  .strip {
+    pointer-events: auto; width: min(720px, 100%);
+    background: var(--glass); border: 1px solid var(--glass-line);
+    backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    border-radius: 18px; padding: 12px 14px; display: grid; gap: 10px;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .readout { flex: 1 1 220px; min-width: 0; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
+  .readout small { display: block; font-weight: 600; font-size: 12.5px; color: var(--muted); }
+  label { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: grid; gap: 4px; flex: 1 1 200px; min-width: 0; }
+  input[type=range] { width: 100%; accent-color: var(--coral); }
+  select, button {
+    font: 800 13px var(--font); color: var(--text); background: rgba(255,255,255,0.1);
+    border: 1px solid var(--glass-line); border-radius: 999px; padding: 7px 13px; cursor: pointer;
+  }
+  select option { color: #111; }
+  button[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color: #fff; }
+  :focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
+</style>
+
+<canvas id="scene" aria-label="Analog clock with NOW written on every hand, over an illustrated landscape that follows the sun, moon and season"></canvas>
+
+<div class="panel">
+  <div class="strip">
+    <div class="row">
+      <div class="readout" id="readout">…</div>
+      <select id="place" aria-label="Place">
+        <option value="here">Your time zone</option>
+        <option value="reykjavik">Reykjavík</option>
+        <option value="newyork">New York</option>
+        <option value="singapore">Singapore</option>
+        <option value="capetown">Cape Town</option>
+        <option value="sydney">Sydney</option>
+      </select>
+      <button id="live" aria-pressed="true">Live</button>
+    </div>
+    <div class="row">
+      <label for="time">Time of day <input id="time" type="range" min="0" max="1439" step="1"></label>
+      <label for="day">Day of year <input id="day" type="range" min="1" max="365" step="1"></label>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Sun & moon (same formulas as the Swift app) ----------
+const RAD = Math.PI / 180, OBL = RAD * 23.4397;
+const toDays = ms => ms / 86400000 - 0.5 + 2440588 - 2451545;
+const ra = (l, b) => Math.atan2(Math.sin(l) * Math.cos(OBL) - Math.tan(b) * Math.sin(OBL), Math.cos(l));
+const dec = (l, b) => Math.asin(Math.sin(b) * Math.cos(OBL) + Math.cos(b) * Math.sin(OBL) * Math.sin(l));
+const az = (H, phi, d) => Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(d) * Math.cos(phi));
+const alt = (H, phi, d) => Math.asin(Math.sin(phi) * Math.sin(d) + Math.cos(phi) * Math.cos(d) * Math.cos(H));
+const sidereal = (d, lw) => RAD * (280.16 + 360.9856235 * d) - lw;
+function sunCoords(d) {
+  const M = RAD * (357.5291 + 0.98560028 * d);
+  const C = RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+  const L = M + C + RAD * 102.9372 + Math.PI;
+  return { dec: dec(L, 0), ra: ra(L, 0) };
+}
+function moonCoords(d) {
+  const L = RAD * (218.316 + 13.176396 * d), M = RAD * (134.963 + 13.064993 * d), F = RAD * (93.272 + 13.229350 * d);
+  const l = L + RAD * 6.289 * Math.sin(M), b = RAD * 5.128 * Math.sin(F);
+  return { dec: dec(l, b), ra: ra(l, b), dist: 385001 - 20905 * Math.cos(M) };
+}
+function position(c, d, lat, lng) {
+  const H = sidereal(d, RAD * -lng) - c.ra, phi = RAD * lat;
+  return { alt: alt(H, phi, c.dec), az: az(H, phi, c.dec) };
+}
+function moonPhase(d) {
+  const s = sunCoords(d), m = moonCoords(d), sd = 149598000;
+  const phi = Math.acos(Math.sin(s.dec) * Math.sin(m.dec) + Math.cos(s.dec) * Math.cos(m.dec) * Math.cos(s.ra - m.ra));
+  const inc = Math.atan2(sd * Math.sin(phi), m.dist - sd * Math.cos(phi));
+  const ang = Math.atan2(Math.cos(s.dec) * Math.sin(s.ra - m.ra), Math.sin(s.dec) * Math.cos(m.dec) - Math.cos(s.dec) * Math.sin(m.dec) * Math.cos(s.ra - m.ra));
+  return { fraction: (1 + Math.cos(inc)) / 2, phase: 0.5 + 0.5 * inc * (ang < 0 ? -1 : 1) / Math.PI };
+}
+const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+function screenX(azm, lat) {
+  let a = azm;
+  if (lat < 0) { a = azm - Math.PI; if (a < -Math.PI) a += 2 * Math.PI; }
+  return 0.5 + a / (1.4 * Math.PI);
+}
+function seasons(dayOfYear, lat) {
+  if (Math.abs(lat) < 23) return { winter: 0, spring: 0.25, summer: 0.75, autumn: 0 };
+  let s = dayOfYear / 365.25; if (lat < 0) s += 0.5;
+  let t = ((s - 0.04) * 4) % 4; if (t < 0) t += 4;
+  const names = ["winter", "spring", "summer", "autumn"];
+  const from = Math.floor(t) % 4, to = (from + 1) % 4, bl = smooth(0.35, 0.65, t - Math.floor(t));
+  const w = { winter: 0, spring: 0, summer: 0, autumn: 0 };
+  w[names[from]] += 1 - bl; w[names[to]] += bl; return w;
+}
+function skyState(utcMs, dayOfYear, lat, lng) {
+  const d = toDays(utcMs);
+  const sun = position(sunCoords(d), d, lat, lng), moon = position(moonCoords(d), d, lat, lng), ph = moonPhase(d);
+  const sunAlt = sun.alt / RAD;
+  return {
+    lat, sunAlt, moonAlt: moon.alt / RAD, sunX: screenX(sun.az, lat), moonX: screenX(moon.az, lat),
+    moonFraction: ph.fraction, moonPhase: ph.phase,
+    daylight: smooth(-10, 8, sunAlt), golden: Math.max(0, 1 - Math.abs(sunAlt - 1.5) / 8),
+    stars: 1 - smooth(-14, -4, sunAlt), season: seasons(dayOfYear, lat),
+  };
+}
+
+// ---------- Colour ----------
+const hex = h => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
+const mixc = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const add = (...cs) => cs.reduce((a, c) => a.map((v, i) => v + c[i]), [0, 0, 0]);
+const mul = (c, k) => c.map(v => v * k);
+const css = (c, a = 1) => `rgba(${c.map(v => Math.round(Math.min(Math.max(v, 0), 1) * 255)).join(",")},${a})`;
+const SKY = [[-18, 0x0A0F24, 0x18213F], [-9, 0x161C47, 0x3E3A6E], [-3, 0x2B3772, 0xE07B66], [1, 0x4A6AAE, 0xF7A65E],
+             [6, 0x6C9BD2, 0xFFD596], [14, 0x6FA9DE, 0xCDE7F3], [45, 0x4B90D6, 0xBEE0F4]].map(([a, t, h]) => [a, hex(t), hex(h)]);
+function skyColors(a) {
+  if (a <= SKY[0][0]) return [SKY[0][1], SKY[0][2]];
+  for (let i = 0; i < SKY.length - 1; i++) if (a >= SKY[i][0] && a <= SKY[i + 1][0]) {
+    const t = (a - SKY[i][0]) / (SKY[i + 1][0] - SKY[i][0]); return [mixc(SKY[i][1], SKY[i + 1][1], t), mixc(SKY[i][2], SKY[i + 1][2], t)];
+  }
+  const l = SKY[SKY.length - 1]; return [l[1], l[2]];
+}
+const seasonal = (s, w, sp, su, au) => add(mul(hex(w), s.winter), mul(hex(sp), s.spring), mul(hex(su), s.summer), mul(hex(au), s.autumn));
+const AUTUMN = [0xE0892E, 0xC9512E, 0xE8B53E, 0xB5402A].map(hex);
+const FLOWERS = [0xF6D04D, 0xF29BB8, 0xFFFFFF, 0xB79CEB, 0xF47C5E].map(hex);
+
+// ---------- Fixed scenery ----------
+function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const specks = (n, seed) => { const r = rng(seed); return Array.from({ length: n }, () => ({ x: r(), y: r(), size: r(), phase: r() * 6.283, tone: Math.floor(r() * 100) })); };
+const S = { stars: specks(170, 11), flowers: specks(80, 23), snow: specks(110, 31), leaves: specks(16, 41), petals: specks(22, 53), fireflies: specks(26, 67), blossoms: specks(14, 79) };
+S.hillTrees = (() => { const r = rng(97), out = []; let u = 0; while (u < 1.02) { out.push({ u, scale: 0.6 + r() * 0.6, pine: r() < 0.45, tone: Math.floor(r() * 100) }); u += 0.025 + r() * 0.06; } return out; })();
+const CROWN = [[0, -0.66, 0.27], [-0.19, -0.57, 0.2], [0.2, -0.59, 0.21], [-0.07, -0.85, 0.2], [0.1, -0.82, 0.19]];
+
+// ---------- Renderer ----------
+const cv = document.getElementById("scene"), ctx = cv.getContext("2d");
+let W = 0, H = 0;
+function resize() { const dpr = Math.min(devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+addEventListener("resize", resize); resize();
+
+const circle = (x, y, r, fill) => { ctx.beginPath(); ctx.arc(x, y, Math.max(r, 0.1), 0, 6.2832); ctx.fillStyle = fill; ctx.fill(); };
+
+function draw(sky, time, clockDate) {
+  const horizon = H * 0.64, skyH = horizon * 0.95, unit = Math.min(W, H), s = sky.season;
+  const lit = c => {
+    const ml = sky.moonAlt > 0 ? sky.moonFraction * 0.5 : 0;
+    const night = mul([c[0] * 0.17 + 0.02, c[1] * 0.21 + 0.03, c[2] * 0.33 + 0.08], 1 + ml);
+    const warm = mixc(c, [c[0] * 1.12 + 0.08, c[1] * 0.92 + 0.03, c[2] * 0.72], sky.golden * 0.6);
+    return mixc(night, warm, sky.daylight);
+  };
+  const skyPt = (a, x) => [x * W, horizon - Math.sin(a * RAD) * skyH];
+  const [top0, hor] = skyColors(sky.sunAlt);
+  const top = mixc(top0, [0.8, 0.85, 0.9], s.winter * 0.15 * sky.daylight);
+
+  let g = ctx.createLinearGradient(0, 0, 0, horizon); g.addColorStop(0, css(top)); g.addColorStop(1, css(hor));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  if (sky.stars > 0.01) for (const st of S.stars) {
+    const tw = 0.55 + 0.45 * Math.sin(time * 1.3 + st.phase * 3);
+    circle(st.x * W, st.y * horizon * 0.95, 0.5 + st.size * 1.4, `rgba(255,255,255,${sky.stars * tw * (0.4 + 0.6 * Math.sqrt(st.y))})`);
+  }
+  // sun glow
+  const glow = sky.golden * 0.75 + sky.daylight * 0.25;
+  if (glow > 0.01) {
+    const [gx, gy] = skyPt(Math.max(sky.sunAlt, -6), sky.sunX);
+    const warm = mixc(hex(0xFFC27A), hex(0xFFF4D6), sky.daylight * (1 - sky.golden));
+    g = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(W, H) * 0.7);
+    g.addColorStop(0, css(warm, glow * 0.6)); g.addColorStop(1, css(warm, 0)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  // moon
+  if (sky.moonAlt > -4) {
+    const [mx, my] = skyPt(sky.moonAlt, sky.moonX), r = unit * 0.034, night = 1 - sky.daylight, mc = hex(0xF5EDD3);
+    const halo = (0.15 + 0.45 * sky.moonFraction) * night;
+    if (halo > 0.01) { g = ctx.createRadialGradient(mx, my, r, mx, my, r * 5); g.addColorStop(0, css(mc, halo * 0.5)); g.addColorStop(1, css(mc, 0)); ctx.fillStyle = g; ctx.fillRect(mx - r * 5, my - r * 5, r * 10, r * 10); }
+    circle(mx, my, r, css(hex(0x2A3150), 0.55 * night));
+    const wax = sky.moonPhase < 0.5, p = wax ? sky.moonPhase : 1 - sky.moonPhase, e = Math.cos(2 * Math.PI * p);
+    let side = wax ? 1 : -1; if (sky.lat < 0) side = -side;
+    ctx.beginPath();
+    for (let i = 0; i <= 36; i++) { const a = -Math.PI / 2 + Math.PI * i / 36; ctx.lineTo(mx + side * r * Math.cos(a), my + r * Math.sin(a)); }
+    for (let i = 0; i <= 36; i++) { const a = Math.PI / 2 - Math.PI * i / 36; ctx.lineTo(mx + side * r * e * Math.cos(a), my + r * Math.sin(a)); }
+    ctx.closePath(); ctx.fillStyle = css(mc, 0.55 + 0.45 * night); ctx.fill();
+  }
+  // sun
+  if (sky.sunAlt > -3) {
+    const [sx, sy] = skyPt(sky.sunAlt, sky.sunX), r = unit * 0.045, c = mixc(hex(0xFFF6D8), hex(0xFF9A4A), sky.golden);
+    g = ctx.createRadialGradient(sx, sy, r * 0.8, sx, sy, r * 3); g.addColorStop(0, css(c, 0.55)); g.addColorStop(1, css(c, 0));
+    ctx.fillStyle = g; ctx.fillRect(sx - r * 3, sy - r * 3, r * 6, r * 6); circle(sx, sy, r, css(c));
+  }
+  // clouds
+  const cc = mixc(hex(0x3A4268), mixc([1, 1, 1], hex(0xFFC6A8), sky.golden * 0.8), sky.daylight), ca = 0.35 + 0.5 * sky.daylight;
+  for (const [start, h, sz, sp] of [[0.05, 0.18, 1, 4], [0.42, 0.10, 0.7, 6], [0.7, 0.30, 1.2, 3], [0.25, 0.42, 0.8, 5]]) {
+    const cw = unit * 0.22 * sz, span = W + cw * 2;
+    let x = ((start * span + time * sp) % span) - cw; const y = horizon * h + unit * 0.04;
+    ctx.fillStyle = css(cc, ca); ctx.beginPath();
+    for (const [dx, dy, dr] of [[-0.35, 0.05, 0.28], [-0.08, -0.1, 0.36], [0.25, -0.02, 0.3], [0.5, 0.08, 0.2]]) { ctx.moveTo(x + cw * dx + cw * dr, y + cw * dy); ctx.arc(x + cw * dx, y + cw * dy, cw * dr, 0, 6.2832); }
+    ctx.roundRect(x - cw * 0.5, y, cw * 1.1, cw * 0.22, cw * 0.11); ctx.fill();
+  }
+  // land helpers
+  const ridge = f => { ctx.beginPath(); ctx.moveTo(0, H); for (let x = 0; x <= W + 4; x += 4) ctx.lineTo(x, f(x / W)); ctx.lineTo(W, H); ctx.closePath(); };
+  const snowCap = (f, line, op, haze) => {
+    if (op <= 0.01) return; ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0);
+    for (let x = 0; x <= W + 4; x += 4) ctx.lineTo(x, line(x / W)); ctx.lineTo(W, 0); ctx.closePath(); ctx.clip();
+    ridge(f); ctx.fillStyle = css(mixc(lit(hex(0xF2F6FA)), hor, haze), op); ctx.fill(); ctx.restore();
+  };
+  const far = u => horizon - H * (0.10 + 0.06 * Math.sin(u * 6.3 + 1.1) + 0.04 * Math.sin(u * 13.7 + 0.4) + 0.022 * Math.sin(u * 29 + 2));
+  ridge(far); ctx.fillStyle = css(mixc(lit(hex(0x6E7FA6)), hor, 0.35)); ctx.fill();
+  snowCap(far, u => horizon - H * (0.155 + 0.01 * Math.sin(u * 70)), Math.min(Math.max(0.3 + 0.7 * s.winter + 0.35 * s.spring + 0.1 * s.autumn - 0.15 * s.summer, 0), 1), 0.3);
+  const near = u => horizon - H * (0.05 + 0.04 * Math.sin(u * 5 + 3) + 0.02 * Math.sin(u * 17 + 1) + 0.008 * Math.sin(u * 41));
+  ridge(near); ctx.fillStyle = css(mixc(lit(hex(0x4D6A80)), hor, 0.18)); ctx.fill();
+  snowCap(near, u => horizon - H * (0.07 + 0.008 * Math.sin(u * 60)), s.winter * 0.95, 0.15);
+
+  const hillTop = u => horizon + H * 0.035 - H * (0.03 + 0.028 * Math.sin(u * 4.1 + 2) + 0.012 * Math.sin(u * 11 + 1));
+  const meadowTop = u => H * 0.80 + H * 0.018 * Math.sin(u * 5 + 0.5) + H * 0.01 * Math.sin(u * 13);
+
+  const pine = (bx, by, h, tone) => {
+    const tw = h * 0.07; ctx.fillStyle = css(lit(hex(0x5B4033))); ctx.fillRect(bx - tw / 2, by - h * 0.16, tw, h * 0.16);
+    const green = css(lit(mixc(hex(0x2E5B45), hex(0x3F6E4E), (tone % 5) / 6)));
+    for (let i = 0; i < 3; i++) {
+      const bottom = by - h * (0.12 + i * 0.24), tp = bottom - h * 0.42, half = h * (0.31 - i * 0.075);
+      ctx.beginPath(); ctx.moveTo(bx - half, bottom); ctx.lineTo(bx, tp); ctx.lineTo(bx + half, bottom); ctx.closePath(); ctx.fillStyle = green; ctx.fill();
+      if (s.winter > 0.02) {
+        const cb = tp + (bottom - tp) * 0.5, chf = half * 0.5;
+        ctx.beginPath(); ctx.moveTo(bx - chf, cb); ctx.quadraticCurveTo(bx, cb - h * 0.03, bx + chf, cb); ctx.lineTo(bx, tp); ctx.closePath();
+        ctx.fillStyle = css(lit(hex(0xF2F6FA)), s.winter); ctx.fill();
+      }
+    }
+  };
+  const leafTree = (bx, by, h, tone, detail) => {
+    const tr = css(lit(hex(0x5B4033)));
+    ctx.beginPath(); ctx.moveTo(bx - h * 0.045, by); ctx.lineTo(bx - h * 0.022, by - h * 0.62); ctx.lineTo(bx + h * 0.022, by - h * 0.62); ctx.lineTo(bx + h * 0.045, by); ctx.closePath(); ctx.fillStyle = tr; ctx.fill();
+    ctx.beginPath();
+    for (const [sx, ex, ey] of [[-0.3, -0.24, -0.82], [-0.45, -0.05, -0.95], [-0.35, 0.22, -0.84], [-0.5, 0.12, -0.7], [-0.25, -0.2, -0.62]]) {
+      ctx.moveTo(bx, by + h * sx); ctx.quadraticCurveTo(bx + h * ex * 0.3, by + h * (sx + ey) / 2, bx + h * ex, by + h * ey);
+    }
+    ctx.strokeStyle = tr; ctx.lineWidth = Math.max(1, h * 0.022); ctx.lineCap = "round"; ctx.stroke();
+    const leafAmt = 1 - s.winter; if (leafAmt <= 0.02) return;
+    const raw = add(mul(hex(0x9BCB63), s.spring), mul(hex(0x4B8B3B), s.summer), mul(AUTUMN[tone % 4], s.autumn));
+    const leaf = lit(mul(raw, 1 / Math.max(leafAmt, 0.001))), grow = 0.75 + 0.25 * leafAmt;
+    for (const [dx, dy, dr] of CROWN) circle(bx + h * dx, by + h * dy, h * dr * grow, css(leaf, leafAmt));
+    if (detail) { const hl = mixc(leaf, [1, 1, 0.85], 0.18 * sky.daylight); for (const [dx, dy, dr] of CROWN.slice(0, 3)) circle(bx + h * (dx - 0.05), by + h * (dy - 0.06), h * dr * grow * 0.55, css(hl, leafAmt * 0.8)); }
+    if (s.spring > 0.05) for (const b of S.blossoms) circle(bx + h * (b.x - 0.5) * 0.6, by - h * (0.5 + b.y * 0.45), h * (0.018 + b.size * 0.02), css(lit(hex(0xF7B9CF)), s.spring));
+  };
+
+  ridge(hillTop); ctx.fillStyle = css(lit(seasonal(s, 0xDCE5EE, 0x8DC26F, 0x5E9B4C, 0xB89146))); ctx.fill();
+  for (const t of S.hillTrees) { const h = H * 0.065 * t.scale, by = hillTop(t.u) + H * 0.008; t.pine ? pine(t.u * W, by, h, t.tone) : leafTree(t.u * W, by, h, t.tone, false); }
+
+  g = ctx.createLinearGradient(0, H * 0.78, 0, H);
+  g.addColorStop(0, css(lit(seasonal(s, 0xEAF0F5, 0x76B65C, 0x4F8E3F, 0xA97C3A)))); g.addColorStop(1, css(lit(seasonal(s, 0xF4F7FA, 0x5FA04A, 0x3F7A34, 0x8E6430))));
+  ridge(meadowTop); ctx.fillStyle = g; ctx.fill();
+  const bloom = s.spring + s.summer * 0.6;
+  if (bloom > 0.02) for (const f of S.flowers) { const y = meadowTop(f.x) + H * 0.015 + f.y * (H - meadowTop(f.x)) * 0.9; circle(f.x * W, y, (1.5 + f.size * 2.5) * (0.6 + 0.6 * y / H), css(lit(FLOWERS[f.tone % 5]), bloom)); }
+  const leafAt = (x, y, rot, sz, c) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.beginPath(); ctx.ellipse(0, 0, sz, sz * 0.45, 0, 0, 6.2832); ctx.fillStyle = c; ctx.fill(); ctx.restore(); };
+  if (s.autumn > 0.02) for (const f of S.flowers) leafAt(((f.x + 0.37) % 1) * W, meadowTop(f.x) + H * 0.02 + f.y * (H - meadowTop(f.x)) * 0.9, f.phase, 3 + f.size * 4, css(lit(AUTUMN[f.tone % 4]), s.autumn));
+
+  const fh = H * 0.34;
+  leafTree(W * 0.09, meadowTop(0.09) + H * 0.03, fh, 1, true);
+  pine(W * 0.93, meadowTop(0.93) + H * 0.03, fh * 0.95, 3);
+  pine(W * 0.84, meadowTop(0.84) + H * 0.02, fh * 0.62, 7);
+
+  // life
+  if (s.winter > 0.05) for (const f of S.snow) { const y = (f.y * H + time * H * (0.04 + f.size * 0.05)) % H; const x = ((f.x * W + Math.sin(time * 0.6 + f.phase) * 18 + time * 6) % W + W) % W; circle(x, y, 1 + f.size * 2.2, `rgba(255,255,255,${s.winter * (0.5 + 0.4 * f.size) * (0.7 + 0.5 * sky.daylight)})`); }
+  if (s.autumn > 0.05) for (const l of S.leaves) { const sp = H + 40; leafAt(l.x * W + Math.sin(time * 0.9 + l.phase) * 35, ((l.y * sp + time * H * (0.03 + l.size * 0.03)) % sp) - 20, time * 1.5 + l.phase, 4 + l.size * 4, css(lit(AUTUMN[l.tone % 4]), s.autumn)); }
+  if (s.spring > 0.05) for (const p of S.petals) { const sp = H + 30; leafAt(p.x * W + Math.sin(time * 1.1 + p.phase) * 25, ((p.y * sp + time * H * 0.025) % sp) - 15, time + p.phase, 3, css(lit(hex(0xF8C3D6)), s.spring * 0.85)); }
+  const ff = (s.summer + s.spring * 0.3) * (1 - sky.daylight);
+  if (ff > 0.02) for (const f of S.fireflies) {
+    const x = f.x * W + Math.sin(time * 0.4 + f.phase) * 30, y = H * 0.70 + f.y * H * 0.26 + Math.cos(time * 0.55 + f.phase) * 14, pulse = Math.max(0, Math.sin(time * 1.7 + f.phase * 2));
+    g = ctx.createRadialGradient(x, y, 0, x, y, 7); g.addColorStop(0, `rgba(255,242,140,${ff * pulse})`); g.addColorStop(1, "rgba(255,230,100,0)"); ctx.fillStyle = g; ctx.fillRect(x - 7, y - 7, 14, 14);
+  }
+  const birds = sky.daylight * (1 - s.winter);
+  if (birds > 0.2) for (let i = 0; i < 3; i++) {
+    const sp = W + 200, x = ((time * 22 + i * 70) % sp) - 100, y = horizon * 0.32 + i * 16 + Math.sin(time * 0.8 + i) * 6, fl = Math.sin(time * 6 + i) * 3;
+    ctx.beginPath(); ctx.moveTo(x - 7, y - 2 + fl); ctx.quadraticCurveTo(x - 3, y - 4 + fl, x, y); ctx.quadraticCurveTo(x + 3, y - 4 + fl, x + 7, y - 2 + fl);
+    ctx.strokeStyle = `rgba(43,47,58,${0.55 * birds})`; ctx.lineWidth = 1.6; ctx.stroke();
+  }
+  drawClock(clockDate, unit);
+}
+
+// ---------- The NOW clock ----------
+function drawClock(t, unit) {
+  const r = unit * 0.31, cx = W / 2, cy = H * 0.42;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = r * 0.08; ctx.shadowOffsetY = r * 0.02;
+  circle(cx, cy, r, "rgba(255,255,255,0.16)");
+  ctx.shadowColor = "transparent";
+  ctx.beginPath(); ctx.arc(cx, cy, r - r * 0.006, 0, 6.2832); ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = Math.max(1, r * 0.012); ctx.stroke();
+  for (let i = 0; i < 60; i++) {
+    const major = i % 5 === 0, w = r * (major ? 0.022 : 0.009), h = r * (major ? 0.09 : 0.04), off = r * (major ? 0.86 : 0.88);
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(i * 6 * RAD); ctx.beginPath(); ctx.roundRect(-w / 2, -off - h / 2, w, h, w / 2);
+    ctx.fillStyle = `rgba(255,255,255,${major ? 0.9 : 0.45})`; ctx.fill(); ctx.restore();
+  }
+  const sec = t.s + t.ms / 1000, min = t.m + sec / 60, hr = (t.h % 12) + min / 60;
+  hand(cx, cy, hr * 30, r * 0.52, r * 0.13, "#fcf8eb", "#292e3d");
+  hand(cx, cy, min * 6, r * 0.76, r * 0.10, "#fcf8eb", "#292e3d");
+  hand(cx, cy, sec * 6, r * 0.86, r * 0.068, "#ee6b54", "#ffffff");
+  circle(cx, cy, r * 0.0375, "#ee6b54"); circle(cx, cy, r * 0.015, "#ffffff");
+  ctx.restore();
+}
+function hand(cx, cy, deg, len, w, fill, ink) {
+  const tail = w * 0.9, flipped = (deg % 360) > 180;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(deg * RAD);
+  ctx.shadowColor = "rgba(0,0,0,0.2)"; ctx.shadowBlur = w * 0.3; ctx.shadowOffsetY = w * 0.08;
+  ctx.beginPath(); ctx.roundRect(-w / 2, -len, w, len + tail, w / 2); ctx.fillStyle = fill; ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.translate(0, -(len - tail) / 2 - (len - tail) * 0.18); ctx.rotate(flipped ? Math.PI / 2 : -Math.PI / 2);
+  ctx.fillStyle = ink; ctx.font = `900 ${w * 0.62}px Nunito, ui-rounded, system-ui, sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.letterSpacing = `${w * 0.08}px`;
+  ctx.fillText("NOW", 0, w * 0.03);
+  ctx.restore();
+}
+
+// ---------- Controls ----------
+const guessOffset = -new Date().getTimezoneOffset() / 60;
+const PLACES = {
+  here: { lat: Intl.DateTimeFormat().resolvedOptions().timeZone.startsWith("Europe") ? 50 : 45, lng: guessOffset * 15, off: guessOffset },
+  reykjavik: { lat: 64.15, lng: -21.94, off: 0 }, newyork: { lat: 40.71, lng: -74.0, off: -4 },
+  singapore: { lat: 1.35, lng: 103.82, off: 8 }, capetown: { lat: -33.92, lng: 18.42, off: 2 }, sydney: { lat: -33.87, lng: 151.21, off: 11 },
+};
+const $ = id => document.getElementById(id);
+let live = true;
+const DAY = 86400000, YEAR0 = Date.UTC(2026, 0, 1);
+function syncSliders(localMs) {
+  const d = new Date(localMs);
+  $("time").value = d.getUTCHours() * 60 + d.getUTCMinutes();
+  $("day").value = Math.floor((localMs - Date.UTC(d.getUTCFullYear(), 0, 1)) / DAY) + 1;
+}
+function setLive(on) { live = on; $("live").setAttribute("aria-pressed", on); }
+$("live").addEventListener("click", () => setLive(true));
+for (const id of ["time", "day"]) $(id).addEventListener("input", () => setLive(false));
+$("place").addEventListener("change", () => {});
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const SEASON_NAMES = { winter: "Winter", spring: "Spring", summer: "Summer", autumn: "Autumn" };
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let lastReadout = "";
+function frame(ts) {
+  const pl = PLACES[$("place").value];
+  let localMs;
+  if (live) { localMs = Date.now() + pl.off * 3600000; syncSliders(localMs); }
+  else {
+    const now = new Date(Date.now() + pl.off * 3600000);
+    localMs = YEAR0 + ($("day").value - 1) * DAY + $("time").value * 60000 + now.getUTCSeconds() * 1000 + now.getUTCMilliseconds();
+  }
+  const utcMs = localMs - pl.off * 3600000, d = new Date(localMs);
+  const doy = Math.floor((localMs - Date.UTC(d.getUTCFullYear(), 0, 1)) / DAY) + 1;
+  const sky = skyState(utcMs, doy, pl.lat, pl.lng);
+  draw(sky, reduce ? 0 : (ts / 1000) % 100000, { h: d.getUTCHours(), m: d.getUTCMinutes(), s: d.getUTCSeconds(), ms: d.getUTCMilliseconds() });
+  const season = Object.entries(sky.season).sort((a, b) => b[1] - a[1])[0][0];
+  const text = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} · ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}|${SEASON_NAMES[season]} · sun ${Math.round(sky.sunAlt)}° · moon ${Math.round(sky.moonFraction * 100)}% lit`;
+  if (text !== lastReadout) { lastReadout = text; const [a, b] = text.split("|"); $("readout").innerHTML = `${a}<small>${b}</small>`; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
