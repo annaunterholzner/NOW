@@ -4,14 +4,28 @@ import SwiftUI
 /// so it can follow the real sun, moon and season smoothly.
 struct NatureScene: View {
     var sky: SkyState
-    /// Seconds, used only for gentle motion (clouds, snow, leaves, twinkling).
+    /// Seconds, used only for gentle motion (clouds, snow, leaves, waves, twinkling).
     var time: Double
+    var landscape: Landscape = .mountains
+    /// Falling snow, leaves, fireflies and birds. Off for the small previews in Settings.
+    var showLife = true
 
     var body: some View {
         Canvas { context, size in
-            SceneRenderer(sky: sky, time: time, size: size).draw(&context)
+            SceneRenderer(sky: sky, time: time, size: size, landscape: landscape, showLife: showLife).draw(&context)
         }
         .ignoresSafeArea()
+    }
+}
+
+enum Landscape: String, CaseIterable, Identifiable {
+    case mountains, coast
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .mountains: "Mountains"
+        case .coast: "Coast"
+        }
     }
 }
 
@@ -29,10 +43,10 @@ struct SeededRandom {
     }
 }
 
-private struct TreeSpot { var u: Double; var scale: Double; var isPine: Bool; var tone: Int }
-private struct Speck { var x: Double; var y: Double; var size: Double; var phase: Double; var tone: Int }
+struct TreeSpot { var u: Double; var scale: Double; var isPine: Bool; var tone: Int }
+struct Speck { var x: Double; var y: Double; var size: Double; var phase: Double; var tone: Int }
 
-private enum Scenery {
+enum Scenery {
     static func specks(_ n: Int, seed: UInt64) -> [Speck] {
         var r = SeededRandom(state: seed)
         return (0..<n).map { _ in
@@ -46,6 +60,9 @@ private enum Scenery {
     static let petals = specks(22, seed: 53)
     static let fireflies = specks(26, seed: 67)
     static let blossoms = specks(14, seed: 79)
+    static let waves = specks(120, seed: 89)
+    static let grass = specks(48, seed: 101)
+    static let shells = specks(18, seed: 113)
 
     static let hillTrees: [TreeSpot] = {
         var r = SeededRandom(state: 97)
@@ -66,10 +83,12 @@ private enum Scenery {
 
 // MARK: - Renderer
 
-private struct SceneRenderer {
+struct SceneRenderer {
     let sky: SkyState
     let time: Double
     let size: CGSize
+    var landscape: Landscape = .mountains
+    var showLife = true
 
     var W: Double { Double(size.width) }
     var H: Double { Double(size.height) }
@@ -107,12 +126,19 @@ private struct SceneRenderer {
         drawMoon(&ctx)
         drawSun(&ctx)
         drawClouds(&ctx)
-        drawMountains(&ctx, horizonColor: colors.horizon)
-        drawHills(&ctx)
-        drawMeadow(&ctx)
-        drawForegroundTrees(&ctx)
-        drawWeatherAndLife(&ctx)
+        switch landscape {
+        case .mountains:
+            drawMountains(&ctx, horizonColor: colors.horizon)
+            drawHills(&ctx)
+            drawMeadow(&ctx)
+            drawForegroundTrees(&ctx)
+        case .coast:
+            drawCoast(&ctx, horizonColor: colors.horizon)
+        }
+        if showLife { drawWeatherAndLife(&ctx) }
     }
+
+    var sunColor: RGB { RGB(hex: 0xFFF6D8).mixed(with: RGB(hex: 0xFF9A4A), sky.goldenHour) }
 
     // MARK: Sky
 
@@ -430,7 +456,8 @@ private struct SceneRenderer {
                          with: .color(.white.opacity(winter * (0.5 + 0.4 * s.size) * (0.5 + 0.5 * sky.daylight + 0.2))))
             }
         }
-        if autumn > 0.05 {
+        let onLand = landscape == .mountains
+        if onLand && autumn > 0.05 {
             for l in Scenery.leaves {
                 let span = H + 40
                 let y = (l.y * span + time * H * (0.03 + l.size * 0.03)).truncatingRemainder(dividingBy: span) - 20
@@ -443,7 +470,7 @@ private struct SceneRenderer {
                        with: .color(lit(Palette.autumnLeaves[l.tone % 4]).color(autumn)))
             }
         }
-        if spring > 0.05 {
+        if onLand && spring > 0.05 {
             for p in Scenery.petals {
                 let span = H + 30
                 let y = (p.y * span + time * H * 0.025).truncatingRemainder(dividingBy: span) - 15
@@ -455,7 +482,7 @@ private struct SceneRenderer {
                        with: .color(lit(RGB(hex: 0xF8C3D6)).color(spring * 0.85)))
             }
         }
-        let fireflyAmount = (summer + spring * 0.3) * (1 - sky.daylight)
+        let fireflyAmount = onLand ? (summer + spring * 0.3) * (1 - sky.daylight) : 0
         if fireflyAmount > 0.02 {
             for f in Scenery.fireflies {
                 let x = f.x * W + sin(time * 0.4 + f.phase) * 30
@@ -468,7 +495,7 @@ private struct SceneRenderer {
                                                center: pt(x, y), startRadius: 0, endRadius: r))
             }
         }
-        let birds = sky.daylight * (1 - winter)
+        let birds = sky.daylight * (onLand ? 1 - winter : 1)   // gulls stay at the sea all year
         if birds > 0.2 {
             let ink = RGB(hex: 0x2B2F3A).color(0.55 * birds)
             for i in 0..<3 {

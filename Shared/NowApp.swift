@@ -15,15 +15,19 @@ struct NowApp: App {
                 .environmentObject(location)
                 .statusBarHidden()
                 .persistentSystemOverlays(.hidden)
-                .onAppear { UIApplication.shared.isIdleTimerDisabled = true }   // nightstand-friendly
         }
         #else
-        WindowGroup("NOW") {
+        WindowGroup("NOW", id: "main") {
             NowView()
                 .environmentObject(location)
-                .frame(minWidth: 360, minHeight: 360)
+                .frame(minWidth: 420, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)
+
+        Settings {
+            SettingsView()
+                .environmentObject(location)
+        }
 
         MenuBarExtra("NOW", systemImage: "clock") {
             DesktopMenu()

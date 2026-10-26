@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// An analog clock where every hand simply says NOW.
+/// An analog clock where every hour reads NOW. The hands are plain and clean.
 struct ClockFace: View {
     var date: Date
-    /// 0 = night, 1 = day — the face adapts its glass and ink a little.
-    var daylight: Double
+    var showSeconds: Bool = true
 
     var body: some View {
         GeometryReader { geo in
@@ -16,43 +15,61 @@ struct ClockFace: View {
                 // glass dial
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .opacity(0.55)
+                    .opacity(0.5)
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.55), lineWidth: max(1, r * 0.012))
+                    .strokeBorder(Color.white.opacity(0.5), lineWidth: max(1, r * 0.012))
 
-                // hour marks
+                // small minute marks between the hours
                 ForEach(0..<60, id: \.self) { i in
-                    let major = i % 5 == 0
-                    Capsule()
-                        .fill(Color.white.opacity(major ? 0.9 : 0.45))
-                        .frame(width: r * (major ? 0.022 : 0.009), height: r * (major ? 0.09 : 0.04))
-                        .offset(y: -r * (major ? 0.86 : 0.88))
-                        .rotationEffect(.degrees(Double(i) * 6))
+                    if i % 5 != 0 {
+                        Capsule()
+                            .fill(Color.white.opacity(0.5))
+                            .frame(width: r * 0.01, height: r * 0.04)
+                            .offset(y: -r * 0.9)
+                            .rotationEffect(.degrees(Double(i) * 6))
+                    }
                 }
 
-                NowHand(angle: a.hour, length: r * 0.52, width: r * 0.13, fill: handFill, ink: ink)
-                NowHand(angle: a.minute, length: r * 0.76, width: r * 0.10, fill: handFill, ink: ink)
-                NowHand(angle: a.second, length: r * 0.86, width: r * 0.068, fill: accent, ink: .white)
+                // NOW at every hour, following the circle; the lower ones turned to stay readable
+                ForEach(0..<12, id: \.self) { i in
+                    let bottom = (4...8).contains(i)
+                    Text("NOW")
+                        .font(.system(size: r * 0.105, weight: .heavy, design: .rounded))
+                        .kerning(r * 0.012)
+                        .foregroundStyle(Color.white.opacity(0.96))
+                        .shadow(color: .black.opacity(0.3), radius: r * 0.015)
+                        .fixedSize()
+                        .offset(y: bottom ? r * 0.79 : -r * 0.79)
+                        .rotationEffect(.degrees(Double(i) * 30 - (bottom ? 180 : 0)))
+                }
 
-                Circle().fill(accent).frame(width: r * 0.075, height: r * 0.075)
-                Circle().fill(Color.white).frame(width: r * 0.03, height: r * 0.03)
+                Hand(angle: a.hour, length: r * 0.5, width: r * 0.06, tail: r * 0.08, color: cream)
+                Hand(angle: a.minute, length: r * 0.72, width: r * 0.042, tail: r * 0.08, color: cream)
+                Circle().fill(cream).frame(width: r * 0.1, height: r * 0.1)
+
+                if showSeconds {
+                    Hand(angle: a.second, length: r * 0.84, width: r * 0.014, tail: r * 0.2, color: coral)
+                    Circle().fill(coral).frame(width: r * 0.06, height: r * 0.06)
+                        .offset(y: r * 0.17)
+                        .rotationEffect(a.second)
+                    Circle().fill(coral).frame(width: r * 0.06, height: r * 0.06)
+                }
+                Circle().fill(Color(red: 0.16, green: 0.18, blue: 0.24)).frame(width: r * 0.024, height: r * 0.024)
             }
             .frame(width: d, height: d)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
-            .shadow(color: .black.opacity(0.25), radius: r * 0.04, y: r * 0.02)
+            .shadow(color: .black.opacity(0.22), radius: r * 0.04, y: r * 0.02)
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityElement()
         .accessibilityLabel(Text(date, style: .time))
     }
 
-    private var handFill: Color { Color(red: 0.99, green: 0.97, blue: 0.92) }
-    private var ink: Color { Color(red: 0.16, green: 0.18, blue: 0.24) }
-    private var accent: Color { Color(red: 0.93, green: 0.42, blue: 0.33) }
+    private var cream: Color { Color(red: 0.99, green: 0.97, blue: 0.92) }
+    private var coral: Color { Color(red: 0.93, green: 0.42, blue: 0.33) }
 
     private func angles(for date: Date) -> (hour: Angle, minute: Angle, second: Angle) {
-        let cal = Calendar.current
-        let c = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let c = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
         let s = Double(c.second ?? 0) + Double(c.nanosecond ?? 0) / 1e9
         let m = Double(c.minute ?? 0) + s / 60
         let h = Double((c.hour ?? 0) % 12) + m / 60
@@ -60,34 +77,20 @@ struct ClockFace: View {
     }
 }
 
-/// One hand: a rounded bar with "NOW" written along it, always readable.
-struct NowHand: View {
+/// A plain rounded hand that pivots at the centre of the dial.
+private struct Hand: View {
     var angle: Angle
     var length: CGFloat
     var width: CGFloat
-    var fill: Color
-    var ink: Color
+    var tail: CGFloat
+    var color: Color
 
     var body: some View {
-        // Keep the text upright-ish: on the left half of the dial, turn it around.
-        let deg = angle.degrees.truncatingRemainder(dividingBy: 360)
-        let flipped = deg > 180
-        let tail = width * 0.9
-
         Capsule()
-            .fill(fill)
-            .overlay(
-                Text("NOW")
-                    .font(.system(size: width * 0.62, weight: .heavy, design: .rounded))
-                    .kerning(width * 0.08)
-                    .foregroundStyle(ink)
-                    .fixedSize()
-                    .rotationEffect(.degrees(flipped ? 90 : -90))
-                    .offset(y: -(length - tail) * 0.18)
-            )
+            .fill(color)
             .frame(width: width, height: length + tail)
             .offset(y: -(length - tail) / 2)
             .rotationEffect(angle)
-            .shadow(color: .black.opacity(0.18), radius: width * 0.15, y: width * 0.08)
+            .shadow(color: .black.opacity(0.25), radius: width * 0.5, y: width * 0.15)
     }
 }

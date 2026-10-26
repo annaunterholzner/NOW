@@ -11,6 +11,7 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
     @Published private(set) var latitude: Double
     @Published private(set) var longitude: Double
     @Published private(set) var isApproximate = true
+    @Published private(set) var status: CLAuthorizationStatus
 
     private let manager = CLLocationManager()
     private let defaults = UserDefaults.standard
@@ -25,40 +26,48 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
             longitude = offsetHours * 15
             latitude = 48
         }
+        status = .notDetermined
         super.init()
+        status = manager.authorizationStatus
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyReduced
         manager.distanceFilter = 5_000
     }
 
-    func start() {
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .denied, .restricted:
-            break
-        default:
-            manager.startUpdatingLocation()
+    var isAllowed: Bool {
+        switch status {
+        case .notDetermined, .denied, .restricted: false
+        default: true
         }
     }
 
+    /// Starts updates if permission was already given. Never shows a prompt by itself.
+    func start() {
+        if isAllowed { manager.startUpdatingLocation() }
+    }
+
+    /// Shows the system prompt (used on the welcome screen and in Settings).
+    func requestPermission() {
+        manager.requestWhenInUseAuthorization()
+    }
+
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let newStatus = manager.authorizationStatus
         Task { @MainActor in
-            switch manager.authorizationStatus {
-            case .denied, .restricted, .notDetermined: break
-            default: manager.startUpdatingLocation()
-            }
+            self.status = newStatus
+            self.start()
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
+        let lat = loc.coordinate.latitude, lng = loc.coordinate.longitude
         Task { @MainActor in
-            self.latitude = loc.coordinate.latitude
-            self.longitude = loc.coordinate.longitude
+            self.latitude = lat
+            self.longitude = lng
             self.isApproximate = false
-            self.defaults.set(self.latitude, forKey: "lastLatitude")
-            self.defaults.set(self.longitude, forKey: "lastLongitude")
+            self.defaults.set(lat, forKey: "lastLatitude")
+            self.defaults.set(lng, forKey: "lastLongitude")
         }
     }
 

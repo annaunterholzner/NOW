@@ -49,6 +49,8 @@ final class DesktopController: ObservableObject {
         }
     }
 
+    func owns(_ window: NSWindow) -> Bool { windows.contains(window) }
+
     func hide() {
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
@@ -61,6 +63,13 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
             LocationProvider.shared.start()
             let desktop = DesktopController.shared
             if desktop.isOn { desktop.show() }
+            // Running as a background: once set up, don't pop a window open on every launch.
+            if desktop.isOn && UserDefaults.standard.bool(forKey: SettingsKey.hasOnboarded) {
+                try? await Task.sleep(for: .milliseconds(200))
+                for window in NSApp.windows where !desktop.owns(window) && window.isVisible && window.canBecomeMain {
+                    window.close()
+                }
+            }
         }
     }
 
@@ -70,9 +79,16 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
 
 struct DesktopMenu: View {
     @ObservedObject private var desktop = DesktopController.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        Button("Open NOW Window") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
         Toggle("Show NOW on Desktop", isOn: $desktop.isOn)
+        SettingsLink { Text("Settings…") }
+            .keyboardShortcut(",")
         Divider()
         Button("Quit NOW") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
