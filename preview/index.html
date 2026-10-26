@@ -86,7 +86,7 @@
 <canvas class="layer" id="mid" aria-hidden="true"></canvas>
 <canvas class="layer" id="near" aria-hidden="true"></canvas>
 <div class="vignette"></div>
-<svg id="clock" role="img" aria-label="Analog clock with the word now at every hour, written in liquid ink, floating over a blurred, moving film image of a body in nature">
+<svg id="clock" role="img" aria-label="Analog clock with the word now at every hour, printed in soft ink, floating over a blurred, moving film image of a body in nature">
   <defs>
     <filter id="inkFx" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
       <feTurbulence id="inkNoise" type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="7" result="noise"></feTurbulence>
@@ -100,7 +100,6 @@
   </defs>
   <g id="inkLayer" filter="url(#inkFx)">
     <g id="glyphs" fill="var(--ink)"></g>
-    <g id="drips" fill="var(--ink)"></g>
     <path id="handHour" fill="var(--ink)"></path>
     <path id="handMin" fill="var(--ink)"></path>
     <path id="handSec" fill="var(--ink-accent)"></path>
@@ -545,11 +544,11 @@ function makeScene(farC, midC, nearC, opts = {}) {
 
 // ================= The ink clock =================
 // "now" at every hour, set along the circle in a soft, liquid italic; hands drawn as ink strokes
-// with teardrop ends. Everything passes through one SVG filter that makes the edges wobble like ink
-// and lets touching shapes melt into each other. Now and then a drop forms on a letter and falls.
+// drawn in the same hand as the letters. Everything passes through one SVG filter that makes the
+// edges wobble like printed ink and lets touching shapes melt into each other.
 const SVGNS = "http://www.w3.org/2000/svg";
 const clockSvg = document.getElementById("clock"), inkLayer = document.getElementById("inkLayer");
-const glyphG = document.getElementById("glyphs"), dripG = document.getElementById("drips");
+const glyphG = document.getElementById("glyphs");
 const handHour = document.getElementById("handHour"), handMin = document.getElementById("handMin"), handSec = document.getElementById("handSec"), hub = document.getElementById("hub");
 let CW = 0, CH = 0, CR = 0, CX = 0, CY = 0, glyphs = [], laidOutFor = "", lastClockUpdate = 0;
 const measureCtx = document.createElement("canvas").getContext("2d");
@@ -568,6 +567,22 @@ function strokePath(len, tail, w, o, steps = 28) {
   return smoothPath([[o(-tail), tail + w(-tail) * 0.8], ...L, [o(len), -len - w(len) * 0.9], ...R.reverse()]);
 }
 const bump = (u, at, width) => Math.exp(-(((u - at) / width) ** 2));
+// A pen stroke along a smooth line through `pts`, with half-width given by width(s), s = 0..1 along the stroke.
+function penStroke(pts, width, steps = 48) {
+  const cr = (p0, p1, p2, p3, t) => { const t2 = t * t, t3 = t2 * t; return [0, 1].map(i => 0.5 * (2 * p1[i] + (-p0[i] + p2[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 + (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3)); };
+  const P = [pts[0], ...pts, pts[pts.length - 1]], line = [];
+  for (let i = 0; i < pts.length - 1; i++) for (let k = 0; k < steps / (pts.length - 1); k++) line.push(cr(P[i], P[i + 1], P[i + 2], P[i + 3], k / (steps / (pts.length - 1))));
+  line.push(pts[pts.length - 1]);
+  const len = [0]; for (let i = 1; i < line.length; i++) len.push(len[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
+  const total = len[len.length - 1], L = [], R = [];
+  line.forEach((p, i) => {
+    const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1;
+    const w = width(len[i] / total), nx = -dy / d, ny = dx / d;
+    L.push([p[0] + nx * w, p[1] + ny * w]); R.push([p[0] - nx * w, p[1] - ny * w]);
+  });
+  const cap = (i, j) => { const p = line[i], q = line[j], d = Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, w = width(i === 0 ? 0 : 1); return [p[0] + (p[0] - q[0]) / d * w * 1.1, p[1] + (p[1] - q[1]) / d * w * 1.1]; };
+  return smoothPath([cap(0, 1), ...L, cap(line.length - 1, line.length - 2), ...R.reverse()]);
+}
 
 function layoutClock() {
   CW = innerWidth; CH = innerHeight; CR = Math.min(CW, CH) * state.clockScale * (CH > CW * 1.3 ? 1.3 : 1) / 2; CR = Math.min(CR, CW * 0.47); CX = CW / 2; CY = CH * 0.45;
@@ -575,8 +590,8 @@ function layoutClock() {
   inkLayer.setAttribute("transform", `translate(${CX} ${CY})`);
   const r = CR, fx = document.getElementById("inkFx");
   fx.setAttribute("x", -1.4 * r); fx.setAttribute("y", -1.4 * r); fx.setAttribute("width", 2.8 * r); fx.setAttribute("height", 3.2 * r);
-  document.getElementById("inkNoise").setAttribute("baseFrequency", (11 / r).toFixed(4));
-  document.getElementById("inkWobble").setAttribute("scale", Math.max(1.5, r * 0.012).toFixed(2));
+  document.getElementById("inkNoise").setAttribute("baseFrequency", (16 / r).toFixed(4));
+  document.getElementById("inkWobble").setAttribute("scale", Math.max(1, r * 0.006).toFixed(2));
   document.getElementById("inkSoft").setAttribute("stdDeviation", Math.max(0.7, r * 0.0045).toFixed(2));
   document.getElementById("inkShadowBlur").setAttribute("stdDeviation", Math.max(3, r * 0.03).toFixed(2));
 
@@ -598,66 +613,28 @@ function layoutClock() {
       t.textContent = ch; t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", fs.toFixed(2));
       t.setAttribute("y", (xh / 2).toFixed(2)); t.setAttribute("transform", `translate(${px.toFixed(2)} ${py.toFixed(2)}) rotate(${rot.toFixed(2)})`);
       glyphG.append(t);
-      // the point of this letter closest to the ground, where ink would gather and drip
-      const rr = rot * RAD, cands = [[0, xh / 2], [0, -xh / 2], [widths[j] * 0.36, 0], [-widths[j] * 0.36, 0]]
-        .map(([x, y]) => [px + x * Math.cos(rr) - y * Math.sin(rr), py + x * Math.sin(rr) + y * Math.cos(rr)]);
-      glyphs.push(cands.reduce((m, q) => (q[1] > m[1] ? q : m)));
     });
   }
 
-  // ---- hands (shapes are fixed; only their rotation changes) ----
-  const Lh = r * 0.44, Lm = r * 0.66, Ls = r * 0.66;
-  // hour: a short spindle with a slight bend, ending in a round drop
-  handHour.setAttribute("d",
-    strokePath(Lh * 0.9, r * 0.03,
-      u => r * (0.012 + 0.02 * bump(u, Lh * 0.36, Lh * 0.3)),
-      u => u < 0 ? 0 : r * 0.016 * Math.sin(Math.PI * Math.min(u / (Lh * 0.9), 1))) +
-    circlePath(0, -Lh, r * 0.036));
-  // minute: long and slender, swelling near the centre, thinning to a hairline with a small drop
-  handMin.setAttribute("d",
-    strokePath(Lm, r * 0.03,
-      u => r * (0.008 + 0.014 * bump(u, Lm * 0.26, Lm * 0.24) * (1 - Math.max(u, 0) / Lm)),
-      u => u < 0 ? 0 : -r * 0.012 * Math.sin(Math.PI * u / Lm)) +
-    circlePath(0, -Lm - r * 0.008, r * 0.016));
-  // second: a hairline of coloured ink with a drop at its end
-  handSec.setAttribute("d",
-    strokePath(Ls - r * 0.01, r * 0.12, () => r * 0.005, () => 0, 16) +
-    circlePath(0, -Ls, r * 0.02) + circlePath(0, r * 0.12, r * 0.024));
-  hub.setAttribute("r", (r * 0.032).toFixed(2));
+  // ---- hands, written like the letters ----
+  // Measured from the typeface: stems are about 0.11 em wide, hairlines about 0.045 em, x-height 0.455 em.
+  // Each hand is one pen stroke along a gently bowed line, swelling and thinning like the italic stems,
+  // with soft rounded ends and the curled hook of the "n" and "w" as its counterweight.
+  const em = fs, stem = em * 0.11, hair = em * 0.045;
+  // hour: a full stem with a gentle bow, swelling past the middle and ending soft and round like the foot of the n
+  handHour.setAttribute("d", penStroke(
+    [[0, 0.055 * r], [0, 0], [0.008 * r, -0.16 * r], [0.009 * r, -0.31 * r], [0, -0.44 * r]],
+    s => stem * (0.5 + 0.62 * Math.sin(Math.PI * Math.min(Math.max(s - 0.05, 0) / 0.95, 1) * 0.92) ** 1.2)));
+  // minute: longer and lighter, bowing the other way, the same soft rounded end
+  handMin.setAttribute("d", penStroke(
+    [[0, 0.055 * r], [0, 0], [-0.009 * r, -0.24 * r], [-0.008 * r, -0.47 * r], [0, -0.68 * r]],
+    s => stem * (0.4 + 0.44 * Math.sin(Math.PI * Math.min(Math.max(s - 0.04, 0) / 0.96, 1) * 0.86))));
+  // second: a single hairline in the accent ink, with the w's curled knob as its tail
+  handSec.setAttribute("d", penStroke(
+    [[-0.036 * r, 0.1 * r], [-0.036 * r, 0.128 * r], [-0.014 * r, 0.138 * r], [0, 0.11 * r], [0, 0], [0, -0.7 * r]],
+    s => s < 0.06 ? hair * 0.75 + (0.06 - s) * stem * 2.6 : hair * (0.62 - 0.12 * s)));
+  hub.setAttribute("r", (stem * 0.7).toFixed(2));
   laidOutFor = `${CW}x${CH}@${state.clockScale}`;
-}
-
-// ---- ink drips: three at different moments of their life ----
-const DRIP = 19, dripEls = [0, 1, 2].map(() => {
-  const neck = document.createElementNS(SVGNS, "path"), drop = document.createElementNS(SVGNS, "ellipse");
-  dripG.append(neck, drop); return { neck, drop };
-});
-const hash = k => { let x = Math.imul(k ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); return (x ^ (x >>> 16)) >>> 0; };
-function updateDrips(tSec) {
-  const r = CR;
-  dripEls.forEach((el, slot) => {
-    const tt = tSec + slot * DRIP / 3, k = Math.floor(tt / DRIP), p = tt / DRIP - k;
-    const lower = glyphs.filter(g => g[1] > r * 0.15), O = lower[hash(k * 7 + slot) % lower.length];
-    if (!O) return;
-    const grow = smooth(0.04, 0.72, p), fall = smooth(0.72, 1, p) > 0 ? (p - 0.72) / 0.28 : 0;
-    // the drop hanging from the letter, swelling and stretching
-    const attached = fall > 0 ? Math.max(0, 1 - fall * 3) : 1;
-    const len = r * 0.075 * grow * attached, R = r * (0.004 + 0.017 * grow) * (0.4 + 0.6 * attached), nw = r * (0.004 + 0.003 * grow);
-    if (grow > 0.01 && R > 0.5) {
-      const cx = O[0], cy = O[1] + len;
-      el.neck.setAttribute("d", smoothPath([
-        [O[0] - nw, O[1] - nw * 1.5], [O[0] - nw * 0.55, O[1] + len * 0.45], [cx - R * 0.95, cy - R * 0.25], [cx - R * 0.7, cy + R * 0.72],
-        [cx, cy + R * 1.05], [cx + R * 0.7, cy + R * 0.72], [cx + R * 0.95, cy - R * 0.25], [O[0] + nw * 0.55, O[1] + len * 0.45], [O[0] + nw, O[1] - nw * 1.5],
-      ]));
-    } else el.neck.setAttribute("d", "");
-    // the drop that let go, falling and thinning out
-    if (fall > 0) {
-      const dr = r * 0.021 * (1 - fall * 0.55), y = O[1] + r * 0.075 + fall * fall * r * 1.1;
-      el.drop.setAttribute("cx", O[0].toFixed(2)); el.drop.setAttribute("cy", y.toFixed(2));
-      el.drop.setAttribute("rx", (dr * (1 - fall * 0.2)).toFixed(2)); el.drop.setAttribute("ry", (dr * (1 + fall * 0.6)).toFixed(2));
-      el.drop.setAttribute("opacity", (1 - smooth(0.55, 1, fall)).toFixed(3));
-    } else el.drop.setAttribute("rx", "0"), el.drop.setAttribute("ry", "0");
-  });
 }
 
 let inkSet = "";
@@ -676,7 +653,6 @@ function drawClock(tm, scale, seconds, nowMs) {
   handMin.setAttribute("transform", `rotate(${(min * 6).toFixed(3)})`);
   handSec.setAttribute("transform", `rotate(${(sec * 6).toFixed(3)})`);
   handSec.style.display = seconds ? "" : "none";
-  updateDrips(reduce ? 0 : nowMs / 1000);
 }
 
 // ================= Film grain =================
