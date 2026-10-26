@@ -1,0 +1,53 @@
+name: Build
+
+# Builds the iPhone and Mac apps on every push, so we know they compile.
+# The Mac app is also published as a download: Releases › "NOW for Mac (latest build)".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen
+
+      - name: Build the Mac app
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project NOW.xcodeproj -target NOW-macOS -configuration Release \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            ONLY_ACTIVE_ARCH=NO -quiet build
+
+      - name: Build the iPhone app (simulator)
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project NOW.xcodeproj -target NOW-iOS -configuration Debug \
+            -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO -quiet build
+
+      - name: Package the Mac app
+        run: ditto -c -k --keepParent build/Release/NOW.app NOW-mac.zip
+
+      - name: Publish the Mac download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete mac-latest --yes --cleanup-tag || true
+          gh release create mac-latest NOW-mac.zip \
+            --title "NOW for Mac (latest build)" \
+            --notes "Built automatically from commit ${GITHUB_SHA::7}. Download NOW-mac.zip, unzip it, move NOW to Applications. The first time, macOS will block it: open System Settings › Privacy & Security, scroll down and click Open Anyway." \
+            --latest

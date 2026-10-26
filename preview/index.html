@@ -20,6 +20,10 @@
     background: #11131c;
   }
   [hidden] { display: none !important; }
+  .in-app .browser-only, .app-only, .mac-only, .ios-only { display: none !important; }
+  .in-app .app-only { display: grid !important; }
+  .on-mac .mac-only, .on-ios .ios-only { display: flex !important; }
+  .in-wallpaper .gear, .in-wallpaper .veil { display: none !important; }
   html, body { height: 100%; }
   body { background: #11131c; color: var(--text); font-family: var(--font); overflow: hidden; }
 
@@ -122,13 +126,18 @@
       <div class="label">Scene</div>
       <div class="scenes" data-scenes></div>
     </div>
-    <div class="section">
+    <div class="section browser-only">
       <div class="label">Where are you</div>
       <select id="w-place" aria-label="Place" data-place></select>
       <p class="hint">The app asks for your location once. This preview uses your time zone or a city you pick.</p>
     </div>
+    <div class="section app-only">
+      <div class="label">Where are you</div>
+      <p class="hint">NOW asks for your location once, so the sun, moon and seasons match your sky. It never leaves your device.</p>
+    </div>
+    <div class="switch mac-only"><label for="w-desktop">Show NOW on my desktop, behind my icons</label><input id="w-desktop" type="checkbox" data-native="desktop"></div>
     <button class="btn primary" id="start">Begin</button>
-    <p class="hint">Later, move the mouse or tap, and use the small button in the corner.</p>
+    <p class="hint" id="later-hint">Later, move the mouse or tap, and use the small button in the corner.</p>
   </div>
 </div>
 
@@ -145,11 +154,17 @@
       <input id="size" type="range" min="0.35" max="0.85" step="0.01">
       <div class="switch"><label for="seconds">Second hand</label><input id="seconds" type="checkbox"></div>
     </div>
-    <div class="section">
+    <div class="section browser-only">
       <div class="label">Place</div>
       <select id="s-place" aria-label="Place" data-place></select>
     </div>
-    <div class="section">
+    <div class="section app-only">
+      <div class="label">This device</div>
+      <div class="switch ios-only"><label for="keepAwake">Keep screen on</label><input id="keepAwake" type="checkbox"></div>
+      <div class="switch mac-only"><label for="s-desktop">Show on desktop, behind icons</label><input id="s-desktop" type="checkbox" data-native="desktop"></div>
+      <div class="switch mac-only"><label for="s-login">Open at login</label><input id="s-login" type="checkbox" data-native="openAtLogin"></div>
+    </div>
+    <div class="section browser-only">
       <div class="label">Time travel (preview only)</div>
       <div class="readout" id="readout">…</div>
       <label class="hint" for="time">Time of day</label>
@@ -668,8 +683,23 @@ function drawGrain(frame) {
   gctx.fillStyle = grainTiles[frame % 4]; gctx.fillRect(0, 0, grainC.width + 200, grainC.height + 200); gctx.restore();
 }
 
-// ================= Settings (kept in this browser only) =================
-const store = {
+// ================= App bridge =================
+// Inside the iPhone or Mac app, the app sets window.NOW_APP before this script runs:
+// { platform: "ios" | "mac", mode: "window" | "wallpaper", fps, settings: {...}, location: { lat, lng } }
+// Settings then live in the app (so the window and the desktop share them), and the real location is used.
+const APP = window.NOW_APP || null;
+const toApp = msg => { try { window.webkit.messageHandlers.now.postMessage(msg); } catch (e) {} };
+if (APP) {
+  const root = document.documentElement.classList;
+  root.add("in-app", APP.platform === "ios" ? "on-ios" : "on-mac");
+  if (APP.mode === "wallpaper") root.add("in-wallpaper");
+}
+
+// ================= Settings =================
+const store = APP ? {
+  get(k, d) { const v = APP.settings && APP.settings[k]; return v === undefined || v === null ? d : v; },
+  set(k, v) { (APP.settings = APP.settings || {})[k] = v; toApp({ type: "set", key: k, value: v }); },
+} : {
   get(k, d) { try { const v = localStorage.getItem("now2." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("now2." + k, JSON.stringify(v)); } catch {} },
 };
@@ -682,6 +712,10 @@ const PLACES = {
   capetown: { name: "Cape Town", lat: -33.92, lng: 18.42, off: 2 },
   sydney: { name: "Sydney", lat: -33.87, lng: 151.21, off: 11 },
 };
+if (APP) PLACES.device = {
+  name: "Your location", lat: APP.location ? APP.location.lat : PLACES.here.lat, lng: APP.location ? APP.location.lng : PLACES.here.lng,
+  get off() { return -new Date().getTimezoneOffset() / 60; },   // the device's own clock, summer time included
+};
 const SCENES = { meadow: "Meadow", shore: "Shore" };
 const state = {
   scene: store.get("scene", "meadow"), place: store.get("place", "here"),
@@ -689,6 +723,7 @@ const state = {
 };
 if (!SCENES[state.scene]) state.scene = "meadow";
 if (!PLACES[state.place]) state.place = "here";
+if (APP) state.place = "device";
 const $ = id => document.getElementById(id);
 
 for (const sel of document.querySelectorAll("[data-place]")) {
@@ -708,6 +743,16 @@ for (const box of document.querySelectorAll("[data-scenes]")) {
 }
 $("size").value = state.clockScale; $("size").addEventListener("input", e => { state.clockScale = +e.target.value; store.set("clockScale", state.clockScale); });
 $("seconds").checked = state.seconds; $("seconds").addEventListener("change", e => { state.seconds = e.target.checked; store.set("seconds", state.seconds); });
+$("keepAwake").checked = store.get("keepAwake", true); $("keepAwake").addEventListener("change", e => store.set("keepAwake", e.target.checked));
+// switches that the Mac app carries out itself (desktop mode, open at login)
+for (const box of document.querySelectorAll("[data-native]")) {
+  box.checked = !!store.get(box.dataset.native, false);
+  box.addEventListener("change", () => {
+    const key = box.dataset.native; if (APP) APP.settings[key] = box.checked;
+    document.querySelectorAll(`[data-native="${key}"]`).forEach(x => x.checked = box.checked);
+    toApp({ type: key, on: box.checked });
+  });
+}
 
 const DAY = 86400000, YEAR0 = Date.UTC(2026, 0, 1);
 function setLive(on) { state.live = on; $("live").setAttribute("aria-pressed", on); }
@@ -715,7 +760,10 @@ $("live").addEventListener("click", () => setLive(true));
 for (const id of ["time", "day"]) $(id).addEventListener("input", () => setLive(false));
 
 const welcome = $("welcome"), settings = $("settings"), gear = $("gear");
-if (!state.onboarded) welcome.hidden = false;
+if (!state.onboarded && APP?.mode !== "wallpaper") welcome.hidden = false;
+if (APP) $("later-hint").textContent = APP.platform === "ios"
+  ? "Later, press and hold anywhere on the screen to open Settings."
+  : "Later, open Settings from the clock icon in the menu bar, or move the mouse over this window.";
 $("start").addEventListener("click", () => { state.onboarded = true; store.set("onboarded", true); welcome.hidden = true; });
 let gearTimer;
 function wake() { if (!welcome.hidden || !settings.hidden) return; gear.classList.add("awake"); clearTimeout(gearTimer); gearTimer = setTimeout(() => gear.classList.remove("awake"), 2500); }
@@ -724,6 +772,28 @@ gear.addEventListener("click", () => { settings.hidden = false; gear.classList.r
 $("close").addEventListener("click", () => { settings.hidden = true; });
 settings.addEventListener("click", e => { if (e.target === settings) settings.hidden = true; });
 addEventListener("keydown", e => { if (e.key === "Escape") settings.hidden = true; });
+function openSettings() { if (!welcome.hidden) return; settings.hidden = false; gear.classList.remove("awake"); }
+// press and hold anywhere to open Settings (the way in on the iPhone)
+let holdTimer, holdAt;
+addEventListener("pointerdown", e => { if (!settings.hidden || !welcome.hidden) return; holdAt = [e.clientX, e.clientY]; clearTimeout(holdTimer); holdTimer = setTimeout(openSettings, 650); });
+addEventListener("pointermove", e => { if (holdAt && Math.hypot(e.clientX - holdAt[0], e.clientY - holdAt[1]) > 12) clearTimeout(holdTimer); });
+addEventListener("pointerup", () => clearTimeout(holdTimer)); addEventListener("pointercancel", () => clearTimeout(holdTimer));
+
+// what the app can ask of the page
+window.NOW = {
+  setLocation(lat, lng) { if (PLACES.device) { PLACES.device.lat = lat; PLACES.device.lng = lng; } },
+  openSettings,
+  apply(values) {                       // settings changed somewhere else (another screen, the menu bar)
+    if (!APP) return;
+    Object.assign(APP.settings, values);
+    if ("scene" in values && SCENES[values.scene]) { state.scene = values.scene; document.querySelectorAll(".scene-btn").forEach(x => x.setAttribute("aria-pressed", x.dataset.scene === state.scene)); }
+    if ("clockScale" in values) { state.clockScale = +values.clockScale; $("size").value = state.clockScale; }
+    if ("seconds" in values) { state.seconds = !!values.seconds; $("seconds").checked = state.seconds; }
+    if ("keepAwake" in values) $("keepAwake").checked = !!values.keepAwake;
+    if ("onboarded" in values && values.onboarded) { state.onboarded = true; welcome.hidden = true; }
+    for (const box of document.querySelectorAll("[data-native]")) if (box.dataset.native in values) box.checked = !!values[box.dataset.native];
+  },
+};
 
 // ================= Loop =================
 const scene = makeScene($("far"), $("mid"), $("near"));
@@ -732,8 +802,11 @@ addEventListener("resize", fit); fit();
 document.fonts.load('40px NowInk').then(() => { laidOutFor = ""; }).catch(() => {});
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let lastReadout = "", frameNo = 0;
+let lastReadout = "", frameNo = 0, lastFrame = 0;
+const minFrameGap = APP && APP.fps ? 1000 / APP.fps - 2 : 0;
 function frame(ts) {
+  if (minFrameGap && ts - lastFrame < minFrameGap) { requestAnimationFrame(frame); return; }
+  lastFrame = ts;
   frameNo++;
   const pl = PLACES[state.place];
   let localMs;
@@ -763,4 +836,5 @@ function frame(ts) {
 }
 if (reduce) drawGrain(0);
 requestAnimationFrame(frame);
+toApp({ type: "ready" });
 </script>

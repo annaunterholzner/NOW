@@ -2,8 +2,6 @@ import SwiftUI
 
 @main
 struct NowApp: App {
-    @StateObject private var location = LocationProvider.shared
-
     #if os(macOS)
     @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
     #endif
@@ -11,22 +9,27 @@ struct NowApp: App {
     var body: some Scene {
         #if os(iOS)
         WindowGroup {
-            NowView()
-                .environmentObject(location)
+            NowWebView()
+                .ignoresSafeArea()
                 .statusBarHidden()
                 .persistentSystemOverlays(.hidden)
+                .onAppear {
+                    LocationProvider.shared.start()
+                    NowBridge.shared.applyKeepAwake()
+                }
         }
         #else
-        WindowGroup("NOW", id: "main") {
-            NowView()
-                .environmentObject(location)
+        Window("NOW", id: "main") {
+            NowWebView()
+                .ignoresSafeArea()
                 .frame(minWidth: 420, minHeight: 420)
         }
         .windowStyle(.hiddenTitleBar)
-
-        Settings {
-            SettingsView()
-                .environmentObject(location)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { NowBridge.shared.openSettings() }
+                    .keyboardShortcut(",")
+            }
         }
 
         MenuBarExtra("NOW", systemImage: "clock") {
