@@ -1,114 +1,124 @@
 <title>NOW Clock</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;700&display=swap">
 <style>
-  /* Layout: the scene is the whole page, like a wallpaper. Nothing sits on top except a gear that appears on movement,
-     a first-visit welcome card, and a settings sheet. Single dark glass look by choice. */
+  /* Layout: a living, blurred film still fills the screen in depth layers (far / figure / near), film grain on top,
+     the NOW ring floats over it. Controls appear only on movement. Single dark film look by choice. */
   :root {
-    --glass: rgba(18, 22, 38, 0.62);
-    --glass-strong: rgba(18, 22, 38, 0.82);
-    --line: rgba(255, 255, 255, 0.16);
-    --text: #f6f3ea;
-    --muted: rgba(246, 243, 234, 0.7);
-    --coral: #ee6b54;
-    --sea: #3fb3b8;
-    --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --glass: rgba(14, 16, 26, 0.55);
+    --glass-strong: rgba(14, 16, 26, 0.78);
+    --line: rgba(255, 255, 255, 0.14);
+    --text: #f4efe7;
+    --muted: rgba(244, 239, 231, 0.66);
+    --ember: #ff8a5c;
+    --font: "Manrope", "Helvetica Neue", system-ui, sans-serif;
     color-scheme: dark;
-    background: #0b1026;
+    background: #11131c;
   }
   [hidden] { display: none !important; }
   html, body { height: 100%; }
-  body { background: #0b1026; color: var(--text); font-family: var(--font); overflow: hidden; }
-  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  body { background: #11131c; color: var(--text); font-family: var(--font); overflow: hidden; }
+
+  /* Depth layers. Drawn at half resolution and blurred by the GPU; oversized so blurred edges stay off-screen. */
+  .layer { position: fixed; inset: -80px; width: calc(100% + 160px); height: calc(100% + 160px); display: block; }
+  #far  { filter: blur(26px) saturate(1.15); }
+  #mid  { filter: blur(7px) saturate(1.1); }
+  #near { filter: blur(18px) saturate(1.2); }
+  #clock { position: fixed; inset: 0; width: 100%; height: 100%; }
+  #grain { position: fixed; inset: 0; width: 100%; height: 100%; mix-blend-mode: overlay; opacity: 0.2; pointer-events: none; }
+  .vignette { position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.38) 100%); }
 
   .gear {
     position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
     background: var(--glass); color: var(--text); display: grid; place-items: center; cursor: pointer;
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    opacity: 0; transition: opacity .5s ease; pointer-events: none;
+    opacity: 0; transition: opacity .6s ease; pointer-events: none;
   }
   .gear.awake { opacity: 1; pointer-events: auto; }
-  .gear svg { width: 22px; height: 22px; }
+  .gear svg { width: 20px; height: 20px; }
 
-  .veil { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(5, 8, 20, 0.35); }
+  .veil { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(5, 6, 12, 0.3); }
   .card {
-    width: min(460px, 100%); max-height: calc(100% - 32px); overflow: auto;
-    background: var(--glass-strong); border: 1px solid var(--line); border-radius: 22px;
-    backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
-    padding: 22px 20px; display: grid; gap: 18px;
+    width: min(440px, 100%); max-height: calc(100% - 32px); overflow: auto;
+    background: var(--glass-strong); border: 1px solid var(--line); border-radius: 20px;
+    backdrop-filter: blur(24px) saturate(1.3); -webkit-backdrop-filter: blur(24px) saturate(1.3);
+    padding: 24px 20px; display: grid; gap: 20px;
   }
-  .wordmark { font-weight: 900; font-size: 44px; letter-spacing: 0.14em; line-height: 1; }
-  .lede { color: var(--muted); font-size: 15px; line-height: 1.45; max-width: 36ch; }
-  h2 { margin: 0; font-size: 20px; font-weight: 900; }
+  .wordmark { font-weight: 300; font-size: 40px; letter-spacing: 0.42em; line-height: 1; }
+  .lede { color: var(--muted); font-size: 15px; line-height: 1.5; max-width: 34ch; margin: 0; }
+  h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; }
   .section { display: grid; gap: 8px; }
-  .label { font-size: 11px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+  .label { font-size: 11px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
   .scenes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .scene-btn {
-    border: 2px solid transparent; border-radius: 14px; padding: 0; overflow: hidden; cursor: pointer;
-    background: none; color: var(--text); text-align: left; font: 800 14px var(--font);
+    border: 1px solid var(--line); border-radius: 14px; padding: 0; overflow: hidden; cursor: pointer;
+    background: none; color: var(--text); text-align: left; font: 600 13px var(--font); letter-spacing: 0.08em;
   }
-  .scene-btn[aria-pressed="true"] { border-color: var(--text); }
-  .scene-btn canvas { position: static; width: 100%; height: auto; aspect-ratio: 16 / 10; }
-  .scene-btn span { display: block; padding: 7px 10px; background: rgba(255,255,255,0.06); }
+  .scene-btn[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+  .scene-btn canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; filter: blur(3px) saturate(1.15); transform: scale(1.06); }
+  .scene-btn span { display: block; padding: 8px 11px; background: rgba(255,255,255,0.05); position: relative; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
-  .row > * { min-width: 0; }
-  input[type=range] { width: 100%; accent-color: var(--coral); }
+  input[type=range] { width: 100%; accent-color: var(--ember); }
   select, .btn {
-    font: 800 14px var(--font); color: var(--text); background: rgba(255,255,255,0.1);
-    border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; cursor: pointer;
+    font: 600 14px var(--font); color: var(--text); background: rgba(255,255,255,0.08);
+    border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; cursor: pointer;
   }
   select option { color: #111; }
-  .btn.primary { background: var(--coral); border-color: var(--coral); color: #fff; padding: 11px 20px; font-size: 15px; }
-  .btn[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color: #fff; }
-  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 700; }
-  .switch input { width: 20px; height: 20px; accent-color: var(--coral); }
-  .readout { font-weight: 700; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-  .hint { font-size: 13px; color: var(--muted); line-height: 1.4; }
+  .btn.primary { background: var(--text); border-color: var(--text); color: #15161d; padding: 12px 20px; font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; }
+  .btn[aria-pressed="true"] { background: var(--ember); border-color: var(--ember); color: #1a0f0a; }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; font-size: 14px; }
+  .switch input { width: 20px; height: 20px; accent-color: var(--ember); }
+  .readout { font-weight: 600; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .hint { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .close { background: none; border: 0; color: var(--text); font-size: 26px; line-height: 1; cursor: pointer; padding: 4px 8px; }
   :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 </style>
 
-<canvas id="scene" aria-label="Analog clock with NOW at every hour, over an illustrated landscape that follows the sun, moon and season"></canvas>
+<canvas class="layer" id="far" aria-hidden="true"></canvas>
+<canvas class="layer" id="mid" aria-hidden="true"></canvas>
+<canvas class="layer" id="near" aria-hidden="true"></canvas>
+<div class="vignette"></div>
+<canvas id="clock" aria-label="Analog clock with NOW at every hour, floating over a blurred, moving film image of a person in nature"></canvas>
+<canvas id="grain" aria-hidden="true"></canvas>
 
 <button class="gear" id="gear" aria-label="Settings">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg>
 </button>
 
-<!-- First visit -->
 <div class="veil" id="welcome" hidden>
   <div class="card" role="dialog" aria-labelledby="w-title">
     <div class="section">
       <div class="wordmark" id="w-title">NOW</div>
-      <p class="lede">A clock for the present moment. The picture follows the real sun, moon and seasons where you are.</p>
+      <p class="lede">Not the past, not the future. A moving image of this moment, coloured by the real sun, moon and season where you are.</p>
     </div>
     <div class="section">
-      <div class="label">Choose your scenery</div>
+      <div class="label">Scene</div>
       <div class="scenes" data-scenes></div>
     </div>
     <div class="section">
-      <div class="label">Where are you?</div>
+      <div class="label">Where are you</div>
       <select id="w-place" aria-label="Place" data-place></select>
       <p class="hint">The app asks for your location once. This preview uses your time zone or a city you pick.</p>
     </div>
-    <button class="btn primary" id="start">Start</button>
-    <p class="hint">Later, move the mouse or tap the screen and use the gear to change settings.</p>
+    <button class="btn primary" id="start">Begin</button>
+    <p class="hint">Later, move the mouse or tap, and use the small button in the corner.</p>
   </div>
 </div>
 
-<!-- Settings -->
 <div class="veil" id="settings" hidden>
   <div class="card" role="dialog" aria-labelledby="s-title">
     <div class="head"><h2 id="s-title">Settings</h2><button class="close" id="close" aria-label="Close settings">×</button></div>
     <div class="section">
-      <div class="label">Scenery</div>
+      <div class="label">Scene</div>
       <div class="scenes" data-scenes></div>
     </div>
     <div class="section">
       <div class="label">Clock</div>
       <label class="hint" for="size">Size</label>
-      <input id="size" type="range" min="0.35" max="0.8" step="0.01">
+      <input id="size" type="range" min="0.35" max="0.85" step="0.01">
       <div class="switch"><label for="seconds">Second hand</label><input id="seconds" type="checkbox"></div>
     </div>
     <div class="section">
@@ -128,7 +138,7 @@
 </div>
 
 <script>
-// ---------- Sun & moon (same formulas as the Swift app) ----------
+// ================= Sun & moon (same formulas as the app) =================
 const RAD = Math.PI / 180, OBL = RAD * 23.4397;
 const toDays = ms => ms / 86400000 - 0.5 + 2440588 - 2451545;
 const ra = (l, b) => Math.atan2(Math.sin(l) * Math.cos(OBL) - Math.tan(b) * Math.sin(OBL), Math.cos(l));
@@ -181,360 +191,341 @@ function skyState(utcMs, dayOfYear, lat, lng) {
     lat, sunAlt, moonAlt: moon.alt / RAD, sunX: screenX(sun.az, lat), moonX: screenX(moon.az, lat),
     moonFraction: ph.fraction, moonPhase: ph.phase,
     daylight: smooth(-10, 8, sunAlt), golden: Math.max(0, 1 - Math.abs(sunAlt - 1.5) / 8),
-    stars: 1 - smooth(-14, -4, sunAlt), season: seasons(dayOfYear, lat),
+    season: seasons(dayOfYear, lat),
   };
 }
 
-// ---------- Colour ----------
+// ================= Colour =================
 const hex = h => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
 const mixc = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 const add = (...cs) => cs.reduce((a, c) => a.map((v, i) => v + c[i]), [0, 0, 0]);
 const mul = (c, k) => c.map(v => v * k);
 const css = (c, a = 1) => `rgba(${c.map(v => Math.round(Math.min(Math.max(v, 0), 1) * 255)).join(",")},${a})`;
-const SKY = [[-18, 0x0A0F24, 0x18213F], [-9, 0x161C47, 0x3E3A6E], [-3, 0x2B3772, 0xE07B66], [1, 0x4A6AAE, 0xF7A65E],
-             [6, 0x6C9BD2, 0xFFD596], [14, 0x6FA9DE, 0xCDE7F3], [45, 0x4B90D6, 0xBEE0F4]].map(([a, t, h]) => [a, hex(t), hex(h)]);
-function skyColors(a) {
-  if (a <= SKY[0][0]) return [SKY[0][1], SKY[0][2]];
-  for (let i = 0; i < SKY.length - 1; i++) if (a >= SKY[i][0] && a <= SKY[i + 1][0]) {
-    const t = (a - SKY[i][0]) / (SKY[i + 1][0] - SKY[i][0]); return [mixc(SKY[i][1], SKY[i + 1][1], t), mixc(SKY[i][2], SKY[i + 1][2], t)];
-  }
-  const l = SKY[SKY.length - 1]; return [l[1], l[2]];
-}
-const seasonal = (s, w, sp, su, au) => add(mul(hex(w), s.winter), mul(hex(sp), s.spring), mul(hex(su), s.summer), mul(hex(au), s.autumn));
-const AUTUMN = [0xE0892E, 0xC9512E, 0xE8B53E, 0xB5402A].map(hex);
-const FLOWERS = [0xF6D04D, 0xF29BB8, 0xFFFFFF, 0xB79CEB, 0xF47C5E].map(hex);
-const SNOW = hex(0xF2F6FA);
+const sea4 = (s, w, sp, su, au) => add(mul(hex(w), s.winter), mul(hex(sp), s.spring), mul(hex(su), s.summer), mul(hex(au), s.autumn));
 
-// ---------- Fixed scenery ----------
+// Film palettes by sun height: top of sky, middle haze, horizon glow
+const FILM = [
+  [-18, 0x0A1128, 0x18204A, 0x2E2753],
+  [-7,  0x1A2858, 0x494489, 0xB0668C],
+  [-1,  0x33447F, 0xA86A95, 0xFF8A57],
+  [5,   0x5A88AA, 0xD49A8C, 0xFFBD7A],
+  [18,  0x6AAABD, 0xA7D0CF, 0xEADFC4],
+  [50,  0x5BA2BC, 0x98CBCF, 0xDDE5D3],
+].map(([a, t, m, h]) => [a, hex(t), hex(m), hex(h)]);
+function palette(sky) {
+  const a = sky.sunAlt; let k = FILM[FILM.length - 1], top = k[1], mid = k[2], hor = k[3];
+  if (a <= FILM[0][0]) { [, top, mid, hor] = FILM[0]; }
+  else for (let i = 0; i < FILM.length - 1; i++) if (a >= FILM[i][0] && a <= FILM[i + 1][0]) {
+    const t = (a - FILM[i][0]) / (FILM[i + 1][0] - FILM[i][0]);
+    top = mixc(FILM[i][1], FILM[i + 1][1], t); mid = mixc(FILM[i][2], FILM[i + 1][2], t); hor = mixc(FILM[i][3], FILM[i + 1][3], t);
+  }
+  const s = sky.season;
+  // seasons tint the whole film: winter cool and pale, autumn amber, spring a little rose
+  const tint = c => {
+    let o = mixc(c, mixc(c, [0.78, 0.84, 0.92], 0.5), s.winter * 0.45);
+    o = mixc(o, [o[0] * 1.08 + 0.03, o[1] * 0.95, o[2] * 0.82], s.autumn * 0.6);
+    o = mixc(o, [o[0] * 1.04 + 0.02, o[1] * 0.97, o[2] * 1.0 + 0.02], s.spring * 0.5);
+    return o;
+  };
+  top = tint(top); mid = tint(mid); hor = tint(hor);
+  const sun = mixc(hex(0xFFF1D6), hex(0xFF7A3D), sky.golden);
+  const night = 1 - sky.daylight;
+  const figure = mixc(mixc(hex(0x1B1A22), hex(0x3A2A2A), sky.daylight), hex(0x0E1020), night * 0.6);
+  return { top, mid, hor, sun, figure, night };
+}
+
+// ================= Fixed randomness =================
 function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const specks = (n, seed) => { const r = rng(seed); return Array.from({ length: n }, () => ({ x: r(), y: r(), size: r(), phase: r() * 6.283, tone: Math.floor(r() * 100) })); };
-const S = { stars: specks(170, 11), flowers: specks(80, 23), snow: specks(110, 31), leaves: specks(16, 41), petals: specks(22, 53),
-            fireflies: specks(26, 67), blossoms: specks(14, 79), waves: specks(120, 89), grass: specks(48, 101), shells: specks(18, 113) };
-S.hillTrees = (() => { const r = rng(97), out = []; let u = 0; while (u < 1.02) { out.push({ u, scale: 0.6 + r() * 0.6, pine: r() < 0.45, tone: Math.floor(r() * 100) }); u += 0.025 + r() * 0.06; } return out; })();
-const CROWN = [[0, -0.66, 0.27], [-0.19, -0.57, 0.2], [0.2, -0.59, 0.21], [-0.07, -0.85, 0.2], [0.1, -0.82, 0.19]];
+const R = { field: specks(220, 5), bokeh: specks(16, 7), drift: specks(40, 9), streaks: specks(60, 13), strands: specks(14, 17) };
+const FLOWERS = {
+  spring: [0xF6B6C8, 0xFFF4F0, 0xF2CFE0, 0xC9A3E2, 0xFFD9A8].map(hex),
+  summer: [0xFFCB45, 0xFF7547, 0xF2588A, 0xFFF0C2, 0xFF9E3D].map(hex),
+  autumn: [0xE07A2E, 0xB4432A, 0xE8B03E, 0x8A3E2A, 0xD9925A].map(hex),
+  winter: [0xE9EFF5, 0xC9D8EA, 0xFFFFFF, 0xB8C7DA, 0xDCE3EC].map(hex),
+};
+function flowerColor(s, i) {
+  return add(mul(FLOWERS.winter[i % 5], s.winter), mul(FLOWERS.spring[i % 5], s.spring), mul(FLOWERS.summer[i % 5], s.summer), mul(FLOWERS.autumn[i % 5], s.autumn));
+}
 
-// ---------- Renderer (draws into any canvas: the big one and the small scenery cards) ----------
-function makeRenderer(canvas) {
-  const ctx = canvas.getContext("2d");
+// ================= The scene =================
+// Draws into three depth layers (far, mid, near). For the small cards all three are the same canvas.
+function makeScene(farC, midC, nearC, opts = {}) {
+  const layers = [...new Set([farC, midC, nearC])];
+  const ctxOf = c => c.getContext("2d");
+  const far = ctxOf(farC), mid = ctxOf(midC), near = ctxOf(nearC);
+  const PAD = opts.pad ?? 80, RES = opts.res ?? 0.5;
   let W = 0, H = 0;
-  const circle = (x, y, r, fill) => { ctx.beginPath(); ctx.arc(x, y, Math.max(r, 0.1), 0, 6.2832); ctx.fillStyle = fill; ctx.fill(); };
-  const ridge = f => { ctx.beginPath(); ctx.moveTo(0, H); for (let x = 0; x <= W + 4; x += 4) ctx.lineTo(x, f(x / W)); ctx.lineTo(W, H); ctx.closePath(); };
 
-  function resize(w, h) { const dpr = Math.min(devicePixelRatio || 1, 2); W = w; H = h; canvas.width = w * dpr; canvas.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  function resize(w, h) {
+    W = w; H = h;
+    for (const c of layers) {
+      c.width = Math.ceil((w + 2 * PAD) * RES); c.height = Math.ceil((h + 2 * PAD) * RES);
+      c.getContext("2d").setTransform(RES, 0, 0, RES, PAD * RES, PAD * RES);
+    }
+  }
+  const clear = ctx => { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore(); };
+  const blob = (ctx, x, y, r, c) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, c); g.addColorStop(1, c.replace(/[\d.]+\)$/, "0)")); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
 
-  function draw(sky, time, opts) {
-    const horizon = H * 0.64, skyH = horizon * 0.95, unit = Math.min(W, H), s = sky.season;
-    const lit = c => {
-      const ml = sky.moonAlt > 0 ? sky.moonFraction * 0.5 : 0;
-      const night = mul([c[0] * 0.17 + 0.02, c[1] * 0.21 + 0.03, c[2] * 0.33 + 0.08], 1 + ml);
-      const warm = mixc(c, [c[0] * 1.12 + 0.08, c[1] * 0.92 + 0.03, c[2] * 0.72], sky.golden * 0.6);
-      return mixc(night, warm, sky.daylight);
+  // A person in profile, facing right: soft body, hair and a dress that move in the wind.
+  // Shapes are smoothed polygons, so under the blur they read as a body, not as geometry.
+  function smoothShape(ctx, pts) {
+    const n = pts.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    let m = mid(pts[n - 1], pts[0]); ctx.moveTo(m[0], m[1]);
+    for (let i = 0; i < n; i++) { const p = pts[i], q = mid(p, pts[(i + 1) % n]); ctx.quadraticCurveTo(p[0], p[1], q[0], q[1]); }
+    ctx.closePath();
+  }
+  function figurePath(ctx, x, y, h, face, t, wind) {
+    ctx.beginPath(); ctx.save(); ctx.translate(x, y); ctx.scale(face * h, h);
+    const sw = Math.sin(t * 0.35) * 0.006, w = wind;
+    // body: head to feet
+    smoothShape(ctx, [
+      [-0.018 + sw, -0.845], [-0.07 + sw, -0.79], [-0.068, -0.66], [-0.064, -0.56], [-0.082, -0.47],
+      [-0.06, -0.3], [-0.05, -0.12], [-0.05, -0.01], [0.075, 0.0], [0.03, -0.04], [0.036, -0.2],
+      [0.04, -0.33], [0.055, -0.47], [0.058, -0.56], [0.085, -0.66], [0.07, -0.76], [0.03 + sw, -0.82],
+    ]);
+    // head with a little nose and chin
+    ctx.moveTo(0.05 + sw, -0.92); ctx.ellipse(0.002 + sw, -0.92, 0.048, 0.064, 0, 0, 6.2832);
+    smoothShape(ctx, [[0.045 + sw, -0.94], [0.072 + sw, -0.905], [0.05 + sw, -0.885], [0.052 + sw, -0.86], [0.02 + sw, -0.85]]);
+    // arm hanging, swinging slightly back
+    const ax = -0.01 + Math.sin(t * 0.5) * 0.01 - w * 0.02;
+    smoothShape(ctx, [[-0.03, -0.79], [0.02, -0.78], [ax + 0.03, -0.6], [ax + 0.025, -0.44], [ax - 0.01, -0.42], [ax - 0.02, -0.6], [-0.045, -0.74]]);
+    // dress from the waist, billowing back in the wind
+    const f = k => Math.sin(t * (1.6 + k * 0.3) + k * 1.7) * 0.012 * (0.4 + w);
+    smoothShape(ctx, [
+      [-0.07, -0.6], [-0.09 - w * 0.04, -0.45 + f(1)], [-0.13 - w * 0.07, -0.3 + f(2)], [-0.16 - w * 0.1, -0.2 + f(3)],
+      [-0.09 - w * 0.04, -0.18 + f(4)], [0.0, -0.22 + f(5)], [0.1, -0.2 + f(6)], [0.07, -0.4], [0.06, -0.6],
+    ]);
+    // hair: a mass at the back of the head, streaming with the wind
+    const L = 0.015 + w * 0.05;
+    smoothShape(ctx, [
+      [0.025 + sw, -0.985], [-0.03 + sw, -0.99], [-0.055 - L * 0.6, -0.955 + f(7)], [-0.06 - L, -0.9 + f(8)],
+      [-0.05 - L * 0.6, -0.84 + f(9)], [-0.035, -0.83], [-0.03, -0.89],
+    ]);
+    ctx.restore();
+  }
+  // The figure with long-exposure ghosts and colour fringes, and an optional reflection in water.
+  function drawFigure(ctx, x, y, h, face, t, wind, P, sky, reflect) {
+    const disperse = 0.25 + wind * 0.9;
+    const rimSide = face;
+    const body = (dx, dy, fill, alpha, mode) => {
+      ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = mode || "source-over";
+      figurePath(ctx, x + dx, y + dy, h, face, t, wind); ctx.fillStyle = fill; ctx.fill();
+      ctx.restore();
     };
-    const skyPt = (a, x) => [x * W, horizon - Math.sin(a * RAD) * skyH];
-    const [top0, hor] = skyColors(sky.sunAlt);
-    const top = mixc(top0, [0.8, 0.85, 0.9], s.winter * 0.15 * sky.daylight);
-    let g;
+    const fig = css(P.figure);
+    if (reflect != null) { ctx.save(); ctx.beginPath(); ctx.rect(-1e4, -1e4, 2e4, reflect + 1e4); ctx.clip(); }
+    // ghosts of the moment just gone
+    for (let k = 4; k >= 1; k--) body(-face * k * h * 0.018 * disperse, -k * h * 0.003, fig, 0.12 * (5 - k) / 4);
+    body(0, 0, fig, 0.92);
+    // light on the side facing the sun (or moon)
+    const light = mixc(P.sun, [1, 1, 1], P.night * 0.5);
+    const lightAmt = 0.25 + sky.golden * 0.6 + sky.daylight * 0.15;
+    body(rimSide * h * 0.018, -h * 0.004, css(light), lightAmt * 0.55, "screen");
+    // colour fringes, magenta behind and yellow-green ahead
+    body(-face * h * 0.03 * disperse, 0, "rgba(255,60,170,1)", 0.22, "screen");
+    body(face * h * 0.022 * disperse, 0, "rgba(220,255,90,1)", 0.16, "screen");
+    if (reflect != null) {
+      ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(-1e4, reflect, 2e4, 1e4); ctx.clip();
+      ctx.translate(0, reflect); ctx.scale(1, -0.6); ctx.translate(0, -reflect); // mirror at the water line
+      ctx.globalAlpha = 0.22;
+      figurePath(ctx, x + Math.sin(t * 1.3) * h * 0.01, y, h, face, t, wind); ctx.fillStyle = fig; ctx.fill();
+      ctx.restore();
+    }
+  }
 
-    // ---- sky ----
-    g = ctx.createLinearGradient(0, 0, 0, horizon); g.addColorStop(0, css(top)); g.addColorStop(1, css(hor));
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    if (sky.stars > 0.01) for (const st of S.stars) {
-      const tw = 0.55 + 0.45 * Math.sin(time * 1.3 + st.phase * 3);
-      circle(st.x * W, st.y * horizon * 0.95, 0.5 + st.size * 1.4, `rgba(255,255,255,${sky.stars * tw * (0.4 + 0.6 * Math.sqrt(st.y))})`);
-    }
-    const glow = sky.golden * 0.75 + sky.daylight * 0.25;
-    if (glow > 0.01) {
-      const [gx, gy] = skyPt(Math.max(sky.sunAlt, -6), sky.sunX);
-      const warm = mixc(hex(0xFFC27A), hex(0xFFF4D6), sky.daylight * (1 - sky.golden));
-      g = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(W, H) * 0.7);
-      g.addColorStop(0, css(warm, glow * 0.6)); g.addColorStop(1, css(warm, 0)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    }
-    const moonColor = hex(0xF5EDD3);
-    if (sky.moonAlt > -4) {
-      const [mx, my] = skyPt(sky.moonAlt, sky.moonX), r = unit * 0.034, night = 1 - sky.daylight;
-      const halo = (0.15 + 0.45 * sky.moonFraction) * night;
-      if (halo > 0.01) { g = ctx.createRadialGradient(mx, my, r, mx, my, r * 5); g.addColorStop(0, css(moonColor, halo * 0.5)); g.addColorStop(1, css(moonColor, 0)); ctx.fillStyle = g; ctx.fillRect(mx - r * 5, my - r * 5, r * 10, r * 10); }
-      circle(mx, my, r, css(hex(0x2A3150), 0.55 * night));
+  function draw(sky, t, o) {
+    for (const c of layers) clear(c.getContext("2d"));
+    const P = palette(sky), s = sky.season, horizon = H * (o.scene === "shore" ? 0.6 : 0.63), unit = Math.min(W, H);
+    const wind = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 0.11) * Math.sin(t * 0.047 + 1));
+    const left = -PAD, top = -PAD, fullW = W + 2 * PAD, fullH = H + 2 * PAD;
+    const skyPt = (a, x) => [x * W, horizon - Math.sin(Math.max(a, -8) * RAD) * horizon * 0.95];
+
+    // ---------- far: sky, glow, sun, moon, land haze ----------
+    let g = far.createLinearGradient(0, top, 0, horizon + H * 0.05);
+    g.addColorStop(0, css(P.top)); g.addColorStop(0.6, css(P.mid)); g.addColorStop(1, css(P.hor));
+    far.fillStyle = g; far.fillRect(left, top, fullW, fullH);
+
+    const [sx, sy] = skyPt(sky.sunAlt, sky.sunX);
+    const glow = 0.35 + sky.golden * 0.6;
+    if (sky.sunAlt > -10) blob(far, sx, sy, Math.max(W, H) * 0.65, css(P.sun, glow * smooth(-10, 0, sky.sunAlt) * 0.7));
+    if (sky.sunAlt > -2) blob(far, sx, sy, unit * 0.09, css(mixc(P.sun, [1, 1, 1], 0.4), 0.95));
+    if (sky.moonAlt > -2) {
+      const [mx, my] = skyPt(sky.moonAlt, sky.moonX), mc = hex(0xEFE8D8), r = unit * 0.04;
+      blob(far, mx, my, unit * 0.3, css(mc, 0.25 * P.night * (0.3 + sky.moonFraction)));
+      far.save(); far.globalAlpha = 0.5 + 0.5 * P.night; far.beginPath(); far.arc(mx, my, r, 0, 6.2832); far.fillStyle = css(mc, 0.15); far.fill();
       const wax = sky.moonPhase < 0.5, p = wax ? sky.moonPhase : 1 - sky.moonPhase, e = Math.cos(2 * Math.PI * p);
       let side = wax ? 1 : -1; if (sky.lat < 0) side = -side;
-      ctx.beginPath();
-      for (let i = 0; i <= 36; i++) { const a = -Math.PI / 2 + Math.PI * i / 36; ctx.lineTo(mx + side * r * Math.cos(a), my + r * Math.sin(a)); }
-      for (let i = 0; i <= 36; i++) { const a = Math.PI / 2 - Math.PI * i / 36; ctx.lineTo(mx + side * r * e * Math.cos(a), my + r * Math.sin(a)); }
-      ctx.closePath(); ctx.fillStyle = css(moonColor, 0.55 + 0.45 * night); ctx.fill();
+      far.beginPath();
+      for (let i = 0; i <= 30; i++) { const a = -Math.PI / 2 + Math.PI * i / 30; far.lineTo(mx + side * r * Math.cos(a), my + r * Math.sin(a)); }
+      for (let i = 0; i <= 30; i++) { const a = Math.PI / 2 - Math.PI * i / 30; far.lineTo(mx + side * r * e * Math.cos(a), my + r * Math.sin(a)); }
+      far.fillStyle = css(mc, 0.95); far.fill(); far.restore();
     }
-    const sunColor = mixc(hex(0xFFF6D8), hex(0xFF9A4A), sky.golden);
-    if (sky.sunAlt > -3) {
-      const [sx, sy] = skyPt(sky.sunAlt, sky.sunX), r = unit * 0.045;
-      g = ctx.createRadialGradient(sx, sy, r * 0.8, sx, sy, r * 3); g.addColorStop(0, css(sunColor, 0.55)); g.addColorStop(1, css(sunColor, 0));
-      ctx.fillStyle = g; ctx.fillRect(sx - r * 3, sy - r * 3, r * 6, r * 6); circle(sx, sy, r, css(sunColor));
-    }
-    const cc = mixc(hex(0x3A4268), mixc([1, 1, 1], hex(0xFFC6A8), sky.golden * 0.8), sky.daylight), ca = 0.35 + 0.5 * sky.daylight;
-    for (const [start, h, sz, sp] of [[0.05, 0.18, 1, 4], [0.42, 0.10, 0.7, 6], [0.7, 0.30, 1.2, 3], [0.25, 0.42, 0.8, 5]]) {
-      const cw = unit * 0.22 * sz, span = W + cw * 2;
-      const x = ((start * span + time * sp) % span) - cw, y = horizon * h + unit * 0.04;
-      ctx.fillStyle = css(cc, ca); ctx.beginPath();
-      for (const [dx, dy, dr] of [[-0.35, 0.05, 0.28], [-0.08, -0.1, 0.36], [0.25, -0.02, 0.3], [0.5, 0.08, 0.2]]) { ctx.moveTo(x + cw * dx + cw * dr, y + cw * dy); ctx.arc(x + cw * dx, y + cw * dy, cw * dr, 0, 6.2832); }
-      ctx.roundRect(x - cw * 0.5, y, cw * 1.1, cw * 0.22, cw * 0.11); ctx.fill();
+    // drifting light leaks
+    far.save(); far.globalCompositeOperation = "screen";
+    const leaks = [[0.15, 0.25, 0xFF5E8A], [0.85, 0.35, 0xFFB347], [0.5, 0.75, 0x6FD6E0]];
+    leaks.forEach(([lx, ly, c], i) => {
+      const x = (lx + 0.12 * Math.sin(t * 0.05 + i * 2)) * W, y = (ly + 0.08 * Math.cos(t * 0.04 + i)) * H;
+      blob(far, x, y, unit * (0.45 + 0.1 * Math.sin(t * 0.07 + i)), css(hex(c), 0.16 + 0.08 * Math.sin(t * 0.09 + i * 3)));
+    });
+    far.restore();
+
+    if (o.scene === "shore") drawShore(); else drawMeadow();
+
+    // ---------- near: seasonal particles in the air ----------
+    for (const d of R.drift) {
+      const amt = s.winter * 1 + s.autumn * 0.6 + s.spring * 0.6 + s.summer * P.night;
+      if (amt < 0.05) break;
+      const span = H + 100, speed = (s.winter ? 0.025 : 0.018) + d.size * 0.02;
+      const y = ((d.y * span + t * H * speed) % span) - 50, x = d.x * W + Math.sin(t * 0.5 + d.phase) * 40 + t * 6;
+      const c = s.summer > 0.5 ? hex(0xFFF29A) : s.winter > 0.4 ? hex(0xFFFFFF) : flowerColor(s, d.tone);
+      const pulse = s.summer > 0.5 ? Math.max(0, Math.sin(t * 1.6 + d.phase)) : 1;
+      near.beginPath(); near.arc(((x % W) + W) % W, y, 3 + d.size * 9, 0, 6.2832); near.fillStyle = css(c, amt * 0.75 * pulse); near.fill();
     }
 
-    // ---- shared plants ----
-    const pine = (bx, by, h, tone) => {
-      const tw = h * 0.07; ctx.fillStyle = css(lit(hex(0x5B4033))); ctx.fillRect(bx - tw / 2, by - h * 0.16, tw, h * 0.16);
-      const green = css(lit(mixc(hex(0x2E5B45), hex(0x3F6E4E), (tone % 5) / 6)));
-      for (let i = 0; i < 3; i++) {
-        const bottom = by - h * (0.12 + i * 0.24), tp = bottom - h * 0.42, half = h * (0.31 - i * 0.075);
-        ctx.beginPath(); ctx.moveTo(bx - half, bottom); ctx.lineTo(bx, tp); ctx.lineTo(bx + half, bottom); ctx.closePath(); ctx.fillStyle = green; ctx.fill();
-        if (s.winter > 0.02) {
-          const cb = tp + (bottom - tp) * 0.5, chf = half * 0.5;
-          ctx.beginPath(); ctx.moveTo(bx - chf, cb); ctx.quadraticCurveTo(bx, cb - h * 0.03, bx + chf, cb); ctx.lineTo(bx, tp); ctx.closePath();
-          ctx.fillStyle = css(lit(SNOW), s.winter); ctx.fill();
-        }
+    function drawMeadow() {
+      // far: distant tree line and field haze
+      far.beginPath(); far.moveTo(left, horizon + 4);
+      for (let x = left; x <= W + PAD; x += 16) far.lineTo(x, horizon - H * (0.02 + 0.025 * Math.sin(x / W * 9 + 1) ** 2 + 0.012 * Math.sin(x / W * 31)));
+      far.lineTo(W + PAD, horizon + 4); far.closePath();
+      far.fillStyle = css(mixc(P.hor, mixc(sea4(s, 0x8C9AA8, 0x4E6A55, 0x46603F, 0x6A4E36), [0, 0, 0], 0.35), 0.55)); far.fill();
+      const ground = mixc(sea4(s, 0xC8D2D9, 0x6F9A5A, 0x86973F, 0x9A6A39), P.hor, 0.25);
+      g = far.createLinearGradient(0, horizon, 0, H + PAD);
+      g.addColorStop(0, css(mixc(ground, P.hor, 0.4))); g.addColorStop(1, css(mixc(ground, [0.05, 0.05, 0.08], P.night * 0.75 + 0.15)));
+      far.fillStyle = g; far.fillRect(left, horizon, fullW, H + PAD - horizon);
+      // field of flowers, denser towards the front
+      for (const f of R.field) {
+        const depth = f.y ** 1.4, y = horizon + depth * (H - horizon) * 1.05, r = 3 + depth * 22 + f.size * 10 * depth;
+        const x = f.x * W + Math.sin(t * 0.8 + f.phase) * (2 + depth * 10) * (0.5 + wind);
+        const vis = s.winter > 0.5 ? 0.4 : 0.92;
+        far.beginPath(); far.ellipse(x, y, r * (1 + wind * 0.8), r * 0.7, 0, 0, 6.2832);
+        far.fillStyle = css(mixc(flowerColor(s, f.tone), [0.05, 0.05, 0.1], P.night * 0.7), vis); far.fill();
       }
-    };
-    const leafTree = (bx, by, h, tone, detail) => {
-      const tr = css(lit(hex(0x5B4033)));
-      ctx.beginPath(); ctx.moveTo(bx - h * 0.045, by); ctx.lineTo(bx - h * 0.022, by - h * 0.62); ctx.lineTo(bx + h * 0.022, by - h * 0.62); ctx.lineTo(bx + h * 0.045, by); ctx.closePath(); ctx.fillStyle = tr; ctx.fill();
-      ctx.beginPath();
-      for (const [sx, ex, ey] of [[-0.3, -0.24, -0.82], [-0.45, -0.05, -0.95], [-0.35, 0.22, -0.84], [-0.5, 0.12, -0.7], [-0.25, -0.2, -0.62]]) {
-        ctx.moveTo(bx, by + h * sx); ctx.quadraticCurveTo(bx + h * ex * 0.3, by + h * (sx + ey) / 2, bx + h * ex, by + h * ey);
+      // mid: the person standing in the field, towards the light
+      const lightX = sky.daylight > 0.3 || sky.moonAlt < 0 ? sky.sunX : sky.moonX;
+      const fx = W * (W > H ? 0.64 : 0.58), face = lightX * W > fx ? 1 : -1, fh = H * (W > H ? 0.62 : 0.5);
+      drawFigure(mid, fx, H * 0.97, fh, face, t, wind, P, sky, null);
+      // flowers around the legs
+      for (const f of R.field.slice(0, 70)) {
+        const x = fx + (f.x - 0.5) * fh * 0.9, y = H * 0.97 - f.y * fh * 0.32, r = fh * (0.025 + f.size * 0.03);
+        mid.beginPath(); mid.ellipse(x + Math.sin(t + f.phase) * 4 * wind, y, r * 1.3, r, 0, 0, 6.2832);
+        mid.fillStyle = css(mixc(flowerColor(s, f.tone + 1), [0.05, 0.05, 0.1], P.night * 0.7), 0.9); mid.fill();
       }
-      ctx.strokeStyle = tr; ctx.lineWidth = Math.max(1, h * 0.022); ctx.lineCap = "round"; ctx.stroke();
-      const leafAmt = 1 - s.winter; if (leafAmt <= 0.02) return;
-      const raw = add(mul(hex(0x9BCB63), s.spring), mul(hex(0x4B8B3B), s.summer), mul(AUTUMN[tone % 4], s.autumn));
-      const leaf = lit(mul(raw, 1 / Math.max(leafAmt, 0.001))), grow = 0.75 + 0.25 * leafAmt;
-      for (const [dx, dy, dr] of CROWN) circle(bx + h * dx, by + h * dy, h * dr * grow, css(leaf, leafAmt));
-      if (detail) { const hl = mixc(leaf, [1, 1, 0.85], 0.18 * sky.daylight); for (const [dx, dy, dr] of CROWN.slice(0, 3)) circle(bx + h * (dx - 0.05), by + h * (dy - 0.06), h * dr * grow * 0.55, css(hl, leafAmt * 0.8)); }
-      if (s.spring > 0.05) for (const b of S.blossoms) circle(bx + h * (b.x - 0.5) * 0.6, by - h * (0.5 + b.y * 0.45), h * (0.018 + b.size * 0.02), css(lit(hex(0xF7B9CF)), s.spring));
-    };
-    const leafAt = (x, y, rot, sz, c) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.beginPath(); ctx.ellipse(0, 0, sz, sz * 0.45, 0, 0, 6.2832); ctx.fillStyle = c; ctx.fill(); ctx.restore(); };
-
-    if (opts.landscape === "coast") drawCoast(); else drawMountains();
-
-    // ---- life (left out of the small scenery cards, where it would look like confetti) ----
-    if (opts.thumb) return;
-    if (s.winter > 0.05) for (const f of S.snow) { const y = (f.y * H + time * H * (0.04 + f.size * 0.05)) % H; const x = ((f.x * W + Math.sin(time * 0.6 + f.phase) * 18 + time * 6) % W + W) % W; circle(x, y, 1 + f.size * 2.2, `rgba(255,255,255,${s.winter * (0.5 + 0.4 * f.size) * (0.7 + 0.5 * sky.daylight)})`); }
-    if (opts.landscape !== "coast") {
-      if (s.autumn > 0.05) for (const l of S.leaves) { const sp = H + 40; leafAt(l.x * W + Math.sin(time * 0.9 + l.phase) * 35, ((l.y * sp + time * H * (0.03 + l.size * 0.03)) % sp) - 20, time * 1.5 + l.phase, 4 + l.size * 4, css(lit(AUTUMN[l.tone % 4]), s.autumn)); }
-      if (s.spring > 0.05) for (const p of S.petals) { const sp = H + 30; leafAt(p.x * W + Math.sin(time * 1.1 + p.phase) * 25, ((p.y * sp + time * H * 0.025) % sp) - 15, time + p.phase, 3, css(lit(hex(0xF8C3D6)), s.spring * 0.85)); }
-      const ff = (s.summer + s.spring * 0.3) * (1 - sky.daylight);
-      if (ff > 0.02) for (const f of S.fireflies) {
-        const x = f.x * W + Math.sin(time * 0.4 + f.phase) * 30, y = H * 0.70 + f.y * H * 0.26 + Math.cos(time * 0.55 + f.phase) * 14, pulse = Math.max(0, Math.sin(time * 1.7 + f.phase * 2));
-        g = ctx.createRadialGradient(x, y, 0, x, y, 7); g.addColorStop(0, `rgba(255,242,140,${ff * pulse})`); g.addColorStop(1, "rgba(255,230,100,0)"); ctx.fillStyle = g; ctx.fillRect(x - 7, y - 7, 14, 14);
-      }
-    }
-    const birds = sky.daylight * (opts.landscape === "coast" ? 1 : 1 - s.winter);
-    if (birds > 0.2) for (let i = 0; i < 3; i++) {
-      const sp = W + 200, x = ((time * 22 + i * 70) % sp) - 100, y = horizon * 0.32 + i * 16 + Math.sin(time * 0.8 + i) * 6, fl = Math.sin(time * 6 + i) * 3;
-      ctx.beginPath(); ctx.moveTo(x - 7, y - 2 + fl); ctx.quadraticCurveTo(x - 3, y - 4 + fl, x, y); ctx.quadraticCurveTo(x + 3, y - 4 + fl, x + 7, y - 2 + fl);
-      ctx.strokeStyle = `rgba(43,47,58,${0.55 * birds})`; ctx.lineWidth = 1.6; ctx.stroke();
-    }
-    if (opts.clock) drawClock(opts.clockTime, unit, opts.clockScale, opts.seconds);
-
-    // ================= Mountains =================
-    function drawMountains() {
-      const snowCap = (f, line, op, haze) => {
-        if (op <= 0.01) return; ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0);
-        for (let x = 0; x <= W + 4; x += 4) ctx.lineTo(x, line(x / W)); ctx.lineTo(W, 0); ctx.closePath(); ctx.clip();
-        ridge(f); ctx.fillStyle = css(mixc(lit(SNOW), hor, haze), op); ctx.fill(); ctx.restore();
-      };
-      const far = u => horizon - H * (0.10 + 0.06 * Math.sin(u * 6.3 + 1.1) + 0.04 * Math.sin(u * 13.7 + 0.4) + 0.022 * Math.sin(u * 29 + 2));
-      ridge(far); ctx.fillStyle = css(mixc(lit(hex(0x6E7FA6)), hor, 0.35)); ctx.fill();
-      snowCap(far, u => horizon - H * (0.155 + 0.01 * Math.sin(u * 70)), Math.min(Math.max(0.3 + 0.7 * s.winter + 0.35 * s.spring + 0.1 * s.autumn - 0.15 * s.summer, 0), 1), 0.3);
-      const near = u => horizon - H * (0.05 + 0.04 * Math.sin(u * 5 + 3) + 0.02 * Math.sin(u * 17 + 1) + 0.008 * Math.sin(u * 41));
-      ridge(near); ctx.fillStyle = css(mixc(lit(hex(0x4D6A80)), hor, 0.18)); ctx.fill();
-      snowCap(near, u => horizon - H * (0.07 + 0.008 * Math.sin(u * 60)), s.winter * 0.95, 0.15);
-
-      const hillTop = u => horizon + H * 0.035 - H * (0.03 + 0.028 * Math.sin(u * 4.1 + 2) + 0.012 * Math.sin(u * 11 + 1));
-      const meadowTop = u => H * 0.80 + H * 0.018 * Math.sin(u * 5 + 0.5) + H * 0.01 * Math.sin(u * 13);
-      ridge(hillTop); ctx.fillStyle = css(lit(seasonal(s, 0xDCE5EE, 0x8DC26F, 0x5E9B4C, 0xB89146))); ctx.fill();
-      for (const t of S.hillTrees) { const h = H * 0.065 * t.scale, by = hillTop(t.u) + H * 0.008; t.pine ? pine(t.u * W, by, h, t.tone) : leafTree(t.u * W, by, h, t.tone, false); }
-
-      g = ctx.createLinearGradient(0, H * 0.78, 0, H);
-      g.addColorStop(0, css(lit(seasonal(s, 0xEAF0F5, 0x76B65C, 0x4F8E3F, 0xA97C3A)))); g.addColorStop(1, css(lit(seasonal(s, 0xF4F7FA, 0x5FA04A, 0x3F7A34, 0x8E6430))));
-      ridge(meadowTop); ctx.fillStyle = g; ctx.fill();
-      const bloom = s.spring + s.summer * 0.6;
-      if (bloom > 0.02) for (const f of S.flowers) { const y = meadowTop(f.x) + H * 0.015 + f.y * (H - meadowTop(f.x)) * 0.9; circle(f.x * W, y, (1.5 + f.size * 2.5) * (0.6 + 0.6 * y / H), css(lit(FLOWERS[f.tone % 5]), bloom)); }
-      if (s.autumn > 0.02) for (const f of S.flowers) leafAt(((f.x + 0.37) % 1) * W, meadowTop(f.x) + H * 0.02 + f.y * (H - meadowTop(f.x)) * 0.9, f.phase, 3 + f.size * 4, css(lit(AUTUMN[f.tone % 4]), s.autumn));
-      const fh = H * 0.34;
-      leafTree(W * 0.09, meadowTop(0.09) + H * 0.03, fh, 1, true);
-      pine(W * 0.93, meadowTop(0.93) + H * 0.03, fh * 0.95, 3);
-      pine(W * 0.84, meadowTop(0.84) + H * 0.02, fh * 0.62, 7);
-    }
-
-    // ================= Coast =================
-    function drawCoast() {
-      const tropical = Math.abs(sky.lat) < 23;
-      // far island and headland with lighthouse
-      const island = u => { const d = (u - 0.16) / 0.1; return d * d < 1 ? horizon - H * 0.022 * (1 - d * d) - H * 0.003 * Math.sin(u * 90) : horizon + 2; };
-      ridge(island); ctx.fillStyle = css(mixc(lit(hex(0x5E7A6E)), hor, 0.5)); ctx.fill();
-      const head = u => horizon + 2 - H * smooth(0.6, 0.8, u) * (0.055 + 0.01 * Math.sin(u * 31) + 0.006 * Math.sin(u * 77));
-      ridge(head); ctx.fillStyle = css(mixc(lit(seasonal(s, 0x7D8C86, 0x5C7F5F, 0x557A55, 0x7A7552)), hor, 0.28)); ctx.fill();
-      if (s.winter > 0.02) { ridge(head); ctx.fillStyle = css(mixc(lit(SNOW), hor, 0.25), s.winter * 0.55); ctx.fill(); }
-      lighthouse(W * 0.84, head(0.84) + 1, H * 0.075);
-
-      // sea
-      const shoreY = u => H * 0.79 + H * 0.012 * Math.sin(u * 4 + 1);
-      const seaFar = lit(seasonal(s, 0x48667C, 0x3A7C9C, 0x2C84A6, 0x3B6A85));
-      const seaNear = lit(seasonal(s, 0x6C95A2, 0x4CA7B3, 0x3DBDBE, 0x5893A0));
-      g = ctx.createLinearGradient(0, horizon, 0, H * 0.82);
-      g.addColorStop(0, css(mixc(hor, seaFar, 0.55))); g.addColorStop(0.25, css(seaFar)); g.addColorStop(1, css(seaNear));
-      ctx.fillStyle = g; ctx.fillRect(0, horizon, W, H - horizon);
-      ctx.fillStyle = css(mixc(hor, [1, 1, 1], 0.3), 0.5); ctx.fillRect(0, horizon - 0.5, W, 1);
-
-      // drifting wave lines
-      ctx.lineCap = "round";
-      for (let k = 0; k < 15; k++) {
-        const t = ((k / 15) + time * 0.01) % 1, y = horizon + (H * 0.79 - horizon) * t * t;
-        ctx.strokeStyle = `rgba(255,255,255,${0.22 * Math.sin(Math.PI * t) * (0.4 + 0.6 * sky.daylight)})`; ctx.lineWidth = 0.8 + t * 1.6; ctx.beginPath();
-        for (let j = 0; j < 8; j++) { const sp = S.waves[k * 8 + j], len = (8 + sp.size * 34) * (0.3 + t) * unit / 700; const x = ((sp.x * W + time * (k % 2 ? 3 : -3)) % W + W) % W; ctx.moveTo(x, y); ctx.lineTo(x + len, y); }
-        ctx.stroke();
-      }
-      // light path on the water from the sun or moon
-      const glitter = (bx, c, inten) => {
-        if (inten < 0.02) return;
-        for (let i = 0; i < 44; i++) {
-          const f = (i + 0.5) / 44, y = horizon + (H * 0.785 - horizon) * f * f, w = (5 + f * 80) * unit / 700;
-          const x = bx + Math.sin(time * 1.3 + i * 2.1) * w * 0.7;
-          ctx.strokeStyle = css(c, inten * (0.2 + 0.8 * Math.sin(time * 2.2 + i * 1.9) ** 2)); ctx.lineWidth = 1 + f * 2.4;
-          ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x + w / 2, y); ctx.stroke();
-        }
-      };
-      glitter(sky.sunX * W, mixc(sunColor, [1, 1, 1], 0.2), (0.35 + 0.6 * sky.golden) * smooth(-1, 3, sky.sunAlt));
-      glitter(sky.moonX * W, moonColor, (1 - sky.daylight) * sky.moonFraction * 0.9 * smooth(-1, 3, sky.moonAlt));
-
-      // beach: wet sand, washing wave, dry sand
-      const sand = lit(seasonal(s, 0xD3CEC4, 0xEAD7A9, 0xF0D9A2, 0xDDC596));
-      ridge(shoreY); ctx.fillStyle = css(mixc(sand, [0.35, 0.3, 0.25], 0.28)); ctx.fill();
-      const wave = 0.5 + 0.5 * Math.sin(time * 0.6);
-      const washY = u => shoreY(u) + H * (0.003 + 0.016 * wave) + H * 0.003 * Math.sin(u * 23 + time * 0.8);
-      ctx.beginPath(); for (let x = 0; x <= W + 4; x += 4) ctx.lineTo(x, shoreY(x / W)); for (let x = W + 4; x >= 0; x -= 4) ctx.lineTo(x, washY(x / W)); ctx.closePath();
-      ctx.fillStyle = css(seaNear, 0.55); ctx.fill();
-      ctx.beginPath(); for (let x = 0; x <= W + 4; x += 4) ctx.lineTo(x, washY(x / W));
-      ctx.strokeStyle = `rgba(255,255,255,${0.45 + 0.4 * sky.daylight})`; ctx.lineWidth = 2; ctx.stroke();
-      const dryY = u => shoreY(u) + H * 0.035 + H * 0.006 * Math.sin(u * 7);
-      g = ctx.createLinearGradient(0, H * 0.8, 0, H); g.addColorStop(0, css(sand)); g.addColorStop(1, css(mixc(sand, [0.4, 0.3, 0.2], 0.12)));
-      ridge(dryY); ctx.fillStyle = g; ctx.fill();
-      if (s.winter > 0.02) { ridge(dryY); ctx.fillStyle = css(lit(SNOW), s.winter * 0.7); ctx.fill(); }
-      for (const sh of S.shells) { const y = dryY(sh.x) + (H - dryY(sh.x)) * (0.1 + sh.y * 0.7); ctx.beginPath(); ctx.ellipse(sh.x * W, y, 2 + sh.size * 2.5, 1.4 + sh.size * 1.5, sh.phase, 0, 6.2832); ctx.fillStyle = css(lit(hex(sh.tone % 2 ? 0xF7EBDD : 0xE9C4B4)), 0.9 * (1 - s.winter * 0.8)); ctx.fill(); }
-
-      // dunes with grass
-      const duneL = u => u < 0.38 ? H * 0.99 - H * 0.16 * (1 - (u / 0.38) ** 2) : H + 20;
-      const duneR = u => u > 0.74 ? H * 1.0 - H * 0.11 * (1 - ((1 - u) / 0.26) ** 2) : H + 20;
-      const duneC = lit(seasonal(s, 0xBDB5A6, 0xD2B178, 0xD8B476, 0xC4A470));
-      for (const d of [duneL, duneR]) { ridge(d); ctx.fillStyle = css(duneC); ctx.fill(); if (s.winter > 0.02) { ridge(d); ctx.fillStyle = css(lit(SNOW), s.winter * 0.75); ctx.fill(); } }
-      const grassC = lit(seasonal(s, 0xA79C80, 0x8DB860, 0x7FA650, 0xC2A15A));
-      ctx.strokeStyle = css(grassC); ctx.lineCap = "round";
-      for (const gr of S.grass) {
-        const left = gr.tone < 55, u = left ? gr.x * 0.34 : 0.77 + gr.x * 0.23, d = left ? duneL : duneR;
-        const bx = u * W, by = d(u) + H * 0.006 + gr.y * H * 0.035, len = H * (0.028 + gr.size * 0.03), sway = Math.sin(time * 1.1 + gr.phase) * 0.12 + 0.15;
-        ctx.lineWidth = Math.max(1, H * 0.0025); ctx.beginPath();
-        for (let b = 0; b < 5; b++) { const a = -Math.PI / 2 + (b - 2) * 0.24 + sway; ctx.moveTo(bx, by); ctx.quadraticCurveTo(bx + Math.cos(a) * len * 0.4, by + Math.sin(a) * len * 0.6, bx + Math.cos(a + sway * 0.6) * len, by + Math.sin(a) * len); }
-        ctx.stroke();
-      }
-      if (tropical) palm(W * 0.13, duneL(0.13) + H * 0.01, H * 0.42); else pine(W * 0.11, duneL(0.11) + H * 0.02, H * 0.3, 3);
-    }
-
-    function lighthouse(x, y, h) {
-      const bw = h * 0.24, tw = h * 0.16, wAt = f => bw + (tw - bw) * f, night = 1 - sky.daylight;
-      const quad = (f0, f1, c) => { ctx.beginPath(); ctx.moveTo(x - wAt(f0) / 2, y - h * f0); ctx.lineTo(x - wAt(f1) / 2, y - h * f1); ctx.lineTo(x + wAt(f1) / 2, y - h * f1); ctx.lineTo(x + wAt(f0) / 2, y - h * f0); ctx.closePath(); ctx.fillStyle = c; ctx.fill(); };
-      const white = css(mixc(lit(hex(0xF4EFE6)), hor, 0.2)), red = css(mixc(lit(hex(0xC8463A)), hor, 0.2));
-      quad(0, 1, white); quad(0.22, 0.38, red); quad(0.58, 0.74, red);
-      ctx.fillStyle = css(mixc(lit(hex(0x2B2F3A)), hor, 0.2)); ctx.fillRect(x - tw * 0.75, y - h * 1.02, tw * 1.5, h * 0.04);
-      const ly = y - h * 1.09;
-      ctx.fillStyle = css(mixc(lit(hex(0x39404F)), [1, 0.88, 0.5], night)); ctx.fillRect(x - tw * 0.4, y - h * 1.15, tw * 0.8, h * 0.13);
-      ctx.beginPath(); ctx.moveTo(x - tw * 0.55, y - h * 1.15); ctx.lineTo(x, y - h * 1.27); ctx.lineTo(x + tw * 0.55, y - h * 1.15); ctx.closePath(); ctx.fillStyle = red; ctx.fill();
-      if (night > 0.05) {
-        const c = Math.cos(time * 0.8), len = W * 0.45 * Math.abs(c), dir = Math.sign(c) || 1, spread = h * 0.32;
-        g = ctx.createLinearGradient(x, ly, x + dir * len, ly);
-        g.addColorStop(0, `rgba(255,240,180,${0.38 * night * (0.35 + 0.65 * Math.abs(c))})`); g.addColorStop(1, "rgba(255,240,180,0)");
-        ctx.beginPath(); ctx.moveTo(x, ly - 1); ctx.lineTo(x + dir * len, ly - spread); ctx.lineTo(x + dir * len, ly + spread); ctx.lineTo(x, ly + 1); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
-        g = ctx.createRadialGradient(x, ly, 0, x, ly, h * 0.35); g.addColorStop(0, `rgba(255,236,170,${0.8 * night})`); g.addColorStop(1, "rgba(255,236,170,0)");
-        ctx.fillStyle = g; ctx.fillRect(x - h * 0.35, ly - h * 0.35, h * 0.7, h * 0.7);
+      // near: big out-of-focus flowers in front, swaying
+      for (const b of R.bokeh) {
+        const x = b.x * W + Math.sin(t * 0.6 + b.phase) * 30 * (0.4 + wind), y = H * (0.86 + b.y * 0.2), r = unit * (0.05 + b.size * 0.08);
+        const c = mixc(flowerColor(s, b.tone + 2), [0.05, 0.05, 0.1], P.night * 0.65);
+        near.save(); near.translate(x, y); near.rotate(Math.sin(t * 0.4 + b.phase) * 0.4);
+        for (let k = 0; k < 5; k++) { near.rotate(Math.PI * 2 / 5); near.beginPath(); near.ellipse(r * 0.55, 0, r * 0.6, r * 0.32, 0, 0, 6.2832); near.fillStyle = css(c, 0.8); near.fill(); }
+        near.beginPath(); near.arc(0, 0, r * 0.25, 0, 6.2832); near.fillStyle = css(mixc(c, hex(0xFFC34D), 0.6), 0.9); near.fill();
+        near.restore();
       }
     }
 
-    function palm(bx, by, h) {
-      const tx = bx + h * 0.2, ty = by - h, cx = bx - h * 0.06, cy = by - h * 0.55, trunk = lit(hex(0x8A6A4A));
-      ctx.lineCap = "round";
-      for (let i = 0; i < 14; i++) {
-        const a = i / 14, b = (i + 1) / 14, P = t => [(1 - t) ** 2 * bx + 2 * (1 - t) * t * cx + t * t * tx, (1 - t) ** 2 * by + 2 * (1 - t) * t * cy + t * t * ty];
-        const [x0, y0] = P(a), [x1, y1] = P(b);
-        ctx.strokeStyle = css(i % 2 ? trunk : mixc(trunk, [0, 0, 0], 0.12)); ctx.lineWidth = h * (0.055 - 0.025 * a);
-        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    function drawShore() {
+      // far: sea with a path of light
+      const deep = mixc(sea4(s, 0x56708A, 0x2E6E8A, 0x2A7F96, 0x3F5F75), hex(0x0A1230), P.night * 0.8);
+      g = far.createLinearGradient(0, horizon, 0, H + PAD);
+      g.addColorStop(0, css(mixc(P.hor, deep, 0.35))); g.addColorStop(0.5, css(deep)); g.addColorStop(1, css(mixc(deep, P.mid, 0.3)));
+      far.fillStyle = g; far.fillRect(left, horizon, fullW, H + PAD - horizon);
+      const light = sky.sunAlt > -2 ? [sky.sunX, mixc(P.sun, [1, 1, 1], 0.3), 0.5 + sky.golden * 0.4] : [sky.moonX, hex(0xEFE8D8), 0.45 * sky.moonFraction * (sky.moonAlt > 0 ? 1 : 0)];
+      for (const st of R.streaks) {
+        const depth = st.y ** 1.4, y = horizon + depth * (H - horizon), w = (20 + depth * 220) * (0.5 + st.size);
+        const near = Math.abs(st.x - 0.5) < 0.18;
+        const x = (near ? light[0] * W + (st.x - 0.5) * W * (0.2 + depth * 0.6) : st.x * W) + Math.sin(t * 0.7 + st.phase) * 20;
+        const a = (near ? light[2] : 0.12) * (0.4 + 0.6 * Math.sin(t * 1.4 + st.phase) ** 2);
+        far.fillStyle = css(near ? light[1] : mixc(P.hor, [1, 1, 1], 0.3), a);
+        far.fillRect(x - w / 2, y, w, 2 + depth * 6);
       }
-      const green = lit(hex(0x3F8A4A)), light = lit(hex(0x5FA85A));
-      // each frond is a tapered leaf shape along a drooping curve
-      const frond = (qx, qy, ex, ey, w, col) => {
-        const N = 14, Lp = [], Rp = [];
-        for (let i = 0; i <= N; i++) {
-          const t = i / N, px = (1 - t) ** 2 * tx + 2 * (1 - t) * t * qx + t * t * ex, py = (1 - t) ** 2 * ty + 2 * (1 - t) * t * qy + t * t * ey;
-          const dx = 2 * (1 - t) * (qx - tx) + 2 * t * (ex - qx), dy = 2 * (1 - t) * (qy - ty) + 2 * t * (ey - qy), l = Math.hypot(dx, dy) || 1;
-          const ww = w * Math.sin(Math.PI * Math.min(t * 1.1, 1)) ** 0.7;
-          Lp.push([px - dy / l * ww, py + dx / l * ww]); Rp.push([px + dy / l * ww, py - dx / l * ww]);
-        }
-        ctx.beginPath(); ctx.moveTo(tx, ty); for (const [x, y] of Lp) ctx.lineTo(x, y); for (const [x, y] of Rp.reverse()) ctx.lineTo(x, y); ctx.closePath();
-        ctx.fillStyle = css(col); ctx.fill();
-      };
-      for (let k = 0; k < 9; k++) {
-        const a = -Math.PI * (0.03 + 0.94 * k / 8) + Math.sin(time * 0.9 + k) * 0.04, L = h * (0.34 + 0.05 * Math.sin(k * 2.3));
-        const droop = 0.25 + 0.35 * Math.abs(Math.cos(a));
-        const ex = tx + Math.cos(a) * L, ey = ty + Math.sin(a) * L * 0.35 + L * droop;
-        const qx = tx + Math.cos(a) * L * 0.55, qy = ty + Math.sin(a) * L * 0.7 - L * 0.08;
-        frond(qx, qy, ex, ey, h * 0.045, k % 2 ? green : light);
+      // mid: the person standing in shallow water, with a reflection
+      const lightX = sky.daylight > 0.3 || sky.moonAlt < 0 ? sky.sunX : sky.moonX;
+      const fx = W * (W > H ? 0.62 : 0.56), face = lightX * W > fx ? 1 : -1, fh = H * (W > H ? 0.56 : 0.46), fy = H * 0.9;
+      const waterY = fy - fh * 0.24;   // knee-deep
+      drawFigure(mid, fx, fy, fh, face, t, wind * 0.6, P, sky, waterY);
+      // a thin bright line where the water meets her
+      mid.fillStyle = css(mixc(light[1], [1, 1, 1], 0.3), 0.35); mid.fillRect(fx - fh * 0.16, waterY - 1, fh * 0.32, 3);
+      // near: soft highlights of small waves
+      for (const st of R.streaks.slice(0, 22)) {
+        const y = H * (0.86 + st.y * 0.18), w = unit * (0.08 + st.size * 0.2), x = ((st.x * W + t * (8 + st.size * 10)) % (W + w)) - w / 2;
+        near.fillStyle = css(mixc(light[1], [1, 1, 1], 0.2), 0.12 + 0.18 * Math.sin(t * 0.9 + st.phase) ** 2);
+        near.fillRect(x - w / 2, y, w, unit * 0.012);
       }
-      for (const [dx, dy] of [[-0.03, 0.03], [0.02, 0.04], [0, 0.07]]) circle(tx + h * dx, ty + h * dy, h * 0.028, css(lit(hex(0x6B4A2E))));
-    }
-
-    // ================= The NOW clock =================
-    function drawClock(t, unit, scale, seconds) {
-      const r = unit * scale / 2, cx = W / 2, cy = H * 0.42;
-      ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,0.22)"; ctx.shadowBlur = r * 0.08; ctx.shadowOffsetY = r * 0.02;
-      circle(cx, cy, r, "rgba(255,255,255,0.14)");
-      ctx.shadowColor = "transparent";
-      ctx.beginPath(); ctx.arc(cx, cy, r - r * 0.006, 0, 6.2832); ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = Math.max(1, r * 0.012); ctx.stroke();
-      // minute marks between the hours
-      for (let i = 0; i < 60; i++) {
-        if (i % 5 === 0) continue;
-        const w = r * 0.01, h = r * 0.04;
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate(i * 6 * RAD); ctx.beginPath(); ctx.roundRect(-w / 2, -r * 0.9 - h / 2, w, h, w / 2);
-        ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fill(); ctx.restore();
-      }
-      // NOW at every hour, following the circle; the lower ones turned so they stay readable
-      ctx.font = `900 ${r * 0.105}px Nunito, ui-rounded, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.letterSpacing = `${r * 0.012}px`;
-      for (let i = 0; i < 12; i++) {
-        const bottom = i >= 4 && i <= 8, R = r * 0.79;
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate((i * 30 - (bottom ? 180 : 0)) * RAD); ctx.translate(0, bottom ? R : -R);
-        ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = r * 0.03; ctx.fillStyle = "rgba(255,255,255,0.96)"; ctx.fillText("NOW", 0, 0);
-        ctx.restore();
-      }
-      ctx.letterSpacing = "0px";
-      const sec = t.s + t.ms / 1000, min = t.m + sec / 60, hr = (t.h % 12) + min / 60;
-      const bar = (deg, len, w, tail, fill) => {
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate(deg * RAD);
-        ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = r * 0.03; ctx.shadowOffsetY = r * 0.008;
-        ctx.beginPath(); ctx.roundRect(-w / 2, -len, w, len + tail, w / 2); ctx.fillStyle = fill; ctx.fill(); ctx.restore();
-      };
-      bar(hr * 30, r * 0.5, r * 0.06, r * 0.08, "#fcf8eb");
-      bar(min * 6, r * 0.72, r * 0.042, r * 0.08, "#fcf8eb");
-      circle(cx, cy, r * 0.05, "#fcf8eb");
-      if (seconds) {
-        bar(sec * 6, r * 0.84, r * 0.014, r * 0.2, "#ee6b54");
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate(sec * 6 * RAD); circle(0, r * 0.17, r * 0.03, "#ee6b54"); ctx.restore();
-        circle(cx, cy, r * 0.03, "#ee6b54");
-      }
-      circle(cx, cy, r * 0.012, "#2a2f3c");
-      ctx.restore();
     }
   }
   return { resize, draw };
 }
 
-// ---------- Settings (kept in this browser only) ----------
+// ================= The floating NOW clock =================
+const clockC = document.getElementById("clock"), cctx = clockC.getContext("2d");
+let CW = 0, CH = 0;
+const trail = [];
+function fitClock() { const dpr = Math.min(devicePixelRatio || 1, 2); CW = innerWidth; CH = innerHeight; clockC.width = CW * dpr; clockC.height = CH * dpr; cctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+function drawClock(tm, scale, seconds, nowMs) {
+  const ctx = cctx; ctx.clearRect(0, 0, CW, CH);
+  const r = Math.min(CW, CH) * scale / 2, cx = CW / 2, cy = CH * 0.45;
+  ctx.save(); ctx.translate(cx, cy);
+  // NOW ring, breathing very slightly
+  const breathe = 1 + Math.sin(nowMs / 4000) * 0.004;
+  ctx.font = `300 ${r * 0.082}px Manrope, "Helvetica Neue", system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.letterSpacing = `${r * 0.03}px`;
+  for (let i = 0; i < 12; i++) {
+    const bottom = i >= 4 && i <= 8, Rr = r * 0.82 * breathe;
+    ctx.save(); ctx.rotate((i * 30 - (bottom ? 180 : 0)) * RAD); ctx.translate(0, bottom ? Rr : -Rr);
+    ctx.shadowColor = "rgba(255,240,225,0.55)"; ctx.shadowBlur = r * 0.05;
+    ctx.fillStyle = "rgba(255,250,244,0.9)"; ctx.fillText("NOW", 0, 0);
+    ctx.restore();
+  }
+  ctx.letterSpacing = "0px";
+  // faint minute dots
+  for (let i = 0; i < 60; i++) {
+    if (i % 5 === 0) continue;
+    const a = i * 6 * RAD; ctx.beginPath(); ctx.arc(Math.sin(a) * r * 0.95, -Math.cos(a) * r * 0.95, Math.max(0.8, r * 0.006), 0, 6.2832);
+    ctx.fillStyle = "rgba(255,250,244,0.35)"; ctx.fill();
+  }
+  const sec = tm.s + tm.ms / 1000, min = tm.m + sec / 60, hr = (tm.h % 12) + min / 60;
+  const line = (deg, len, tail, w, color, alpha = 1) => {
+    const a = deg * RAD, dx = Math.sin(a), dy = -Math.cos(a);
+    ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-dx * tail, -dy * tail); ctx.lineTo(dx * len, dy * len); ctx.stroke(); ctx.globalAlpha = 1;
+  };
+  const chroma = (deg, len, tail, w) => {
+    ctx.globalCompositeOperation = "screen";
+    ctx.save(); ctx.translate(-r * 0.006, 0); line(deg, len, tail, w, "rgba(255,70,170,0.6)"); ctx.restore();
+    ctx.save(); ctx.translate(r * 0.006, 0); line(deg, len, tail, w, "rgba(90,230,255,0.6)"); ctx.restore();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.shadowColor = "rgba(0,0,0,0.25)"; ctx.shadowBlur = r * 0.03;
+    line(deg, len, tail, w, "rgba(255,250,244,0.95)"); ctx.shadowBlur = 0;
+  };
+  chroma(hr * 30, r * 0.48, r * 0.06, r * 0.024);
+  chroma(min * 6, r * 0.7, r * 0.06, r * 0.015);
+  if (seconds) {
+    // long-exposure trail of the last moment
+    trail.push({ deg: sec * 6, t: nowMs }); while (trail.length && nowMs - trail[0].t > 900) trail.shift();
+    for (const p of trail) { const age = (nowMs - p.t) / 900; if (age > 0.02) line(p.deg, r * 0.8, r * 0.14, r * 0.006, "rgba(255,150,110,1)", 0.22 * (1 - age)); }
+    line(sec * 6, r * 0.8, r * 0.14, r * 0.007, "rgba(255,160,120,1)");
+  }
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.018, 0, 6.2832); ctx.fillStyle = "rgba(255,250,244,1)"; ctx.fill();
+  ctx.restore();
+}
+
+// ================= Film grain =================
+const grainC = document.getElementById("grain"), gctx = grainC.getContext("2d");
+const grainTiles = [0, 1, 2, 3].map(() => {
+  const c = document.createElement("canvas"); c.width = c.height = 200; const x = c.getContext("2d"), img = x.createImageData(200, 200);
+  for (let i = 0; i < img.data.length; i += 4) { const v = 128 + (Math.random() - 0.5) * 200; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+  x.putImageData(img, 0, 0); return gctx.createPattern(c, "repeat");
+});
+function fitGrain() { grainC.width = innerWidth; grainC.height = innerHeight; }
+function drawGrain(frame) {
+  gctx.save(); gctx.translate(-Math.random() * 200, -Math.random() * 200);
+  gctx.fillStyle = grainTiles[frame % 4]; gctx.fillRect(0, 0, grainC.width + 200, grainC.height + 200); gctx.restore();
+}
+
+// ================= Settings (kept in this browser only) =================
 const store = {
-  get(k, d) { try { const v = localStorage.getItem("now." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem("now." + k, JSON.stringify(v)); } catch {} },
+  get(k, d) { try { const v = localStorage.getItem("now2." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("now2." + k, JSON.stringify(v)); } catch {} },
 };
 const guessOffset = -new Date().getTimezoneOffset() / 60;
 const PLACES = {
@@ -545,43 +536,38 @@ const PLACES = {
   capetown: { name: "Cape Town", lat: -33.92, lng: 18.42, off: 2 },
   sydney: { name: "Sydney", lat: -33.87, lng: 151.21, off: 11 },
 };
-const SCENES = { mountains: "Mountains", coast: "Coast" };
+const SCENES = { meadow: "Meadow", shore: "Shore" };
 const state = {
-  landscape: store.get("landscape", "mountains"), place: store.get("place", "here"),
-  clockScale: store.get("clockScale", 0.62), seconds: store.get("seconds", true), onboarded: store.get("onboarded", false),
-  live: true,
+  scene: store.get("scene", "meadow"), place: store.get("place", "here"),
+  clockScale: store.get("clockScale", 0.66), seconds: store.get("seconds", true), onboarded: store.get("onboarded", false), live: true,
 };
-if (!SCENES[state.landscape]) state.landscape = "mountains";
+if (!SCENES[state.scene]) state.scene = "meadow";
 if (!PLACES[state.place]) state.place = "here";
 const $ = id => document.getElementById(id);
 
-// place selects
 for (const sel of document.querySelectorAll("[data-place]")) {
   for (const [k, p] of Object.entries(PLACES)) { const o = document.createElement("option"); o.value = k; o.textContent = p.name; sel.append(o); }
   sel.value = state.place;
-  sel.addEventListener("change", () => { state.place = sel.value; store.set("place", sel.value); document.querySelectorAll("[data-place]").forEach(s => s.value = sel.value); });
+  sel.addEventListener("change", () => { state.place = sel.value; store.set("place", sel.value); document.querySelectorAll("[data-place]").forEach(x => x.value = sel.value); });
 }
-// scenery cards with tiny live thumbnails
 const thumbs = [];
 for (const box of document.querySelectorAll("[data-scenes]")) {
   for (const [k, name] of Object.entries(SCENES)) {
-    const b = document.createElement("button"); b.className = "scene-btn"; b.dataset.scene = k; b.setAttribute("aria-pressed", k === state.landscape);
+    const b = document.createElement("button"); b.className = "scene-btn"; b.dataset.scene = k; b.setAttribute("aria-pressed", k === state.scene);
     const c = document.createElement("canvas"); const sp = document.createElement("span"); sp.textContent = name;
     b.append(c, sp); box.append(b);
-    b.addEventListener("click", () => { state.landscape = k; store.set("landscape", k); document.querySelectorAll(".scene-btn").forEach(x => x.setAttribute("aria-pressed", x.dataset.scene === k)); });
-    const r = makeRenderer(c); r.resize(200, 125); thumbs.push({ r, k });
+    b.addEventListener("click", () => { state.scene = k; store.set("scene", k); document.querySelectorAll(".scene-btn").forEach(x => x.setAttribute("aria-pressed", x.dataset.scene === k)); });
+    const r = makeScene(c, c, c, { pad: 0, res: 1 }); r.resize(200, 125); thumbs.push({ r, k });
   }
 }
 $("size").value = state.clockScale; $("size").addEventListener("input", e => { state.clockScale = +e.target.value; store.set("clockScale", state.clockScale); });
 $("seconds").checked = state.seconds; $("seconds").addEventListener("change", e => { state.seconds = e.target.checked; store.set("seconds", state.seconds); });
 
-// time travel
 const DAY = 86400000, YEAR0 = Date.UTC(2026, 0, 1);
 function setLive(on) { state.live = on; $("live").setAttribute("aria-pressed", on); }
 $("live").addEventListener("click", () => setLive(true));
 for (const id of ["time", "day"]) $(id).addEventListener("input", () => setLive(false));
 
-// welcome / settings / gear
 const welcome = $("welcome"), settings = $("settings"), gear = $("gear");
 if (!state.onboarded) welcome.hidden = false;
 $("start").addEventListener("click", () => { state.onboarded = true; store.set("onboarded", true); welcome.hidden = true; });
@@ -593,13 +579,15 @@ $("close").addEventListener("click", () => { settings.hidden = true; });
 settings.addEventListener("click", e => { if (e.target === settings) settings.hidden = true; });
 addEventListener("keydown", e => { if (e.key === "Escape") settings.hidden = true; });
 
-// ---------- Loop ----------
-const main = makeRenderer($("scene"));
-const fit = () => main.resize(innerWidth, innerHeight); addEventListener("resize", fit); fit();
+// ================= Loop =================
+const scene = makeScene($("far"), $("mid"), $("near"));
+function fit() { scene.resize(innerWidth, innerHeight); fitClock(); fitGrain(); }
+addEventListener("resize", fit); fit();
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let lastReadout = "", frameNo = 0;
 function frame(ts) {
+  frameNo++;
   const pl = PLACES[state.place];
   let localMs;
   if (state.live) {
@@ -613,10 +601,11 @@ function frame(ts) {
   }
   const utcMs = localMs - pl.off * 3600000, d = new Date(localMs);
   const doy = Math.floor((localMs - Date.UTC(d.getUTCFullYear(), 0, 1)) / DAY) + 1;
-  const sky = skyState(utcMs, doy, pl.lat, pl.lng), time = reduce ? 0 : (ts / 1000) % 100000;
-  main.draw(sky, time, { landscape: state.landscape, clock: true, clockScale: state.clockScale, seconds: state.seconds,
-                         clockTime: { h: d.getUTCHours(), m: d.getUTCMinutes(), s: d.getUTCSeconds(), ms: d.getUTCMilliseconds() } });
-  if ((!welcome.hidden || !settings.hidden) && frameNo++ % 4 === 0) for (const t of thumbs) t.r.draw(sky, time, { landscape: t.k, thumb: true });
+  const sky = skyState(utcMs, doy, pl.lat, pl.lng), t = reduce ? 0 : (ts / 1000) % 100000;
+  scene.draw(sky, t, { scene: state.scene });
+  drawClock({ h: d.getUTCHours(), m: d.getUTCMinutes(), s: d.getUTCSeconds(), ms: d.getUTCMilliseconds() }, state.clockScale, state.seconds, ts);
+  if (!reduce && frameNo % 2 === 0) drawGrain(frameNo >> 1);
+  if ((!welcome.hidden || !settings.hidden) && frameNo % 3 === 0) for (const th of thumbs) th.r.draw(sky, t, { scene: th.k });
   if (!settings.hidden) {
     const season = Object.entries(sky.season).sort((a, b) => b[1] - a[1])[0][0];
     const text = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} · ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} · ${season} · sun ${Math.round(sky.sunAlt)}° · moon ${Math.round(sky.moonFraction * 100)}%`;
@@ -624,5 +613,6 @@ function frame(ts) {
   }
   requestAnimationFrame(frame);
 }
+if (reduce) drawGrain(0);
 requestAnimationFrame(frame);
 </script>
