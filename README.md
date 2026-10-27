@@ -1,8 +1,8 @@
 # NOW
 
-An analog clock for the present moment. Every hour on the dial reads **now**, printed in soft liquid ink, over a blurred, slow-motion film image of a body moving through nature.
+An analog clock for the present moment. Every hour on the dial reads **now**, in a fine, light serif, over a blurred, slow-motion film image of a body moving through nature.
 
-The picture follows the real sky where you are: the sun and moon move across it, the moon shows its real phase, and the colours and seasons change with the time of day and the time of year. Ink is dark by day and turns cream after dusk.
+The picture follows the real sky where you are: the sun and moon move across it, the moon shows its real phase, and the colours and seasons change with the time of day and the time of year. The lettering is a soft cream that sits lightly on the blur; choose Cormorant or Italiana in Settings.
 
 - **Scenes:** Meadow, or Shore (running through shallow water).
 - **Runs on Mac, iPhone and iPad.** On the Mac it can live on your desktop, behind your icons, like a moving wallpaper.
@@ -58,7 +58,7 @@ The whole scene is one web page, `preview/index.html`: the moving body, the sky,
 | `Shared/LocationProvider.swift` | Rough location, remembered between launches, time-zone fallback |
 | `Shared/NowApp.swift` | The app: full-screen scene on iPhone, window + menu bar on Mac |
 | `macOS/DesktopMode.swift` | Desktop-wallpaper mode, open at login, the menu bar menu |
-| `Shared/Fonts/` | The ink typeface (Fraunces Italic, subset), with its open font licence |
+| `Shared/Fonts/` | The dial typefaces (Cormorant Garamond Light Italic and Italiana, subsets), with their open font licences |
 | `project.yml` | XcodeGen project (iOS 17+, macOS 14+) |
 | `.github/workflows/build.yml` | Builds both apps on every change and publishes the Mac download |
 
